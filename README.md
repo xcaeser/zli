@@ -2,13 +2,14 @@
 
 A **blazing fast**, zero-cost-abstraction command-line interface (CLI) framework for Zig, inspired by Go's Cobra and Rust's clap. Build robust, ergonomic, and highly-performant CLI apps with ease.
 
+Written fully in Zig.
+
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 
 ## 🚀 Why zli?
 
 - **Ultra-performant**: Minimal allocations, zero hidden costs, and native Zig speed.
-- **Cobra-inspired**: Familiar structure for Go and Rust CLI devs.
 - **Modular**: Organize commands in a `cli/` folder, with a `root.zig` as your entrypoint.
 - **Type-safe flag parsing**: Booleans, ints, strings, with default values and shortcuts.
 - **Automatic help/version**: Built-in help and semantic versioning.
@@ -53,6 +54,7 @@ pub fn build(allocator: std.mem.Allocator) !zli.Builder {
         .name = "blitz",
         .description = "Blitz: a blazing fast CLI app.",
         .version = std.SemanticVersion.parse("1.0.0") catch unreachable,
+        // other options...
     });
 
     try root.addCommands(&.{
@@ -95,6 +97,10 @@ fn runCommand(ctx: zli.CommandContext) !void {
     const now = ctx.command.getBoolValue("now");
     const ttl = ctx.command.getIntValue("ttl");
     std.debug.print("The things: {} and {d}\\n", .{ now, ttl });
+
+    // Do anything you want here
+    // e.g. start a server, run a task, etc.
+    // ctx.command.printHelp() to print help for this command
 }
 
 const nowFlag = zli.Flag{
@@ -131,13 +137,13 @@ pub fn main() !void {
 ### 🖥️ CLI Example
 
 ```sh
-$ blitz start --now=false --ttl=60
+$ blitz start --now=false --ttl 60 # both flag styles work  '=' and ' '
 The things: false and 60
 
 $ blitz version
 1.0.0
 
-$ blitz --help
+$ blitz --help # or -h. you can even use many shorthands -abc
 Blitz: a blazing fast CLI app.
 v1.0.0
 
