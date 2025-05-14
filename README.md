@@ -26,6 +26,20 @@ Written fully in Zig.
 - Styled output (with terminal support)
 - Clear, actionable error messages
 
+## 📦 Installation
+
+```sh
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.1.0.tar.gz
+```
+
+**Add to `build.zig`**
+
+```zig
+const zli_dep = b.dependency("zli", .{ .target = target });
+
+exe.root_module.addImport("zli", zli_dep.module("zli"));
+```
+
 ## 🏎️ Usage
 
 ### Project Structure (Cobra-style)
@@ -152,20 +166,6 @@ Available commands:
    version    Blitz's current installed version
 
 Use 'blitz [command] --help' for more information about a command.
-```
-
-## 📦 Installation
-
-```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.1.0.tar.gz
-```
-
-**Add to `build.zig`**
-
-```zig
-const zli_dep = b.dependency("zli", .{ .target = target });
-
-exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
 ## 📚 API Summary
