@@ -1,0 +1,14 @@
+.{
+    .name = .zli,
+    .version = "1.0.0",
+    .fingerprint = 0x5b01c9c3a623e52d, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}
