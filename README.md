@@ -163,7 +163,7 @@ zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.0.0.tar.gz
 **Add to `build.zig`**
 
 ```zig
-const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize });
+const zli_dep = b.dependency("zli", .{ .target = target });
 
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
