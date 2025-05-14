@@ -156,25 +156,8 @@ Use 'blitz [command] --help' for more information about a command.
 
 ## 📦 Installation
 
-**Option 1: `zig fetch`**
-
 ```sh
 zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.0.0.tar.gz
-```
-
-**Option 2: `build.zig.zon`**
-
-```zig
-.{
-    .name = "your-project",
-    .version = "0.1.0",
-    .dependencies = .{
-        .zli = .{
-            .url = "https://github.com/xcaeser/zli/archive/v1.0.0.tar.gz",
-            .hash = "...", // zig's suggested hash
-        },
-    },
-}
 ```
 
 **Add to `build.zig`**
