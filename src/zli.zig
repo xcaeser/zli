@@ -558,6 +558,7 @@ pub const Builder = struct {
 
         // Step 2: print commands with aligned descriptions
         for (self.commands.items) |cmd| {
+            const desc = if (cmd.options.short_description) |dsc| dsc else cmd.options.description;
             const shortcut_text = if (cmd.options.shortcut) |s| std.fmt.allocPrint(self.allocator, " ({s})", .{s}) catch "()" else "";
             defer if (cmd.options.shortcut != null) self.allocator.free(shortcut_text);
 
@@ -567,7 +568,7 @@ pub const Builder = struct {
             const padding = max_width - name_and_shortcut.len;
             try stdout.print("   {s}", .{name_and_shortcut});
             try stdout.writeByteNTimes(' ', padding + 4); // 2 spaces between name and desc
-            try stdout.print("{s}\n", .{cmd.options.description});
+            try stdout.print("{s}\n", .{desc});
         }
 
         try stdout.print("\nUse '{s} [command] --help' for more information about a command.\n", .{self.options.name});

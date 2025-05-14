@@ -157,7 +157,7 @@ Use 'blitz [command] --help' for more information about a command.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.1.0.tar.gz
 ```
 
 **Add to `build.zig`**
