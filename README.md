@@ -187,28 +187,28 @@ exe.root_module.addImport("zli", zli_dep.module("zli"));
 
 ## 📚 API Summary
 
-| Category    | Signature                                                                                     | Description                             |
-| ----------- | --------------------------------------------------------------------------------------------- | --------------------------------------- |
-| **Builder** | `pub fn init(allocator: std.mem.Allocator, options: BuilderOptions) !Builder`                 | Create a new CLI builder                |
-| **Builder** | `pub fn addCommands(self: *Builder, cmds: []const Command) !void`                             | Register multiple commands              |
-| **Builder** | `pub fn execute(self: *Builder) !void`                                                        | Parse args and run the selected command |
-| **Builder** | `pub fn executeCmd(self: *Builder, cmd_name: []const u8, args: []const []const u8) !void`     | Run a specific command directly         |
-| **Builder** | `pub fn showInfo(self: *Builder) !void`                                                       | Print general CLI info                  |
-| **Builder** | `pub fn listCommands(self: *Builder) !void`                                                   | List all available commands             |
-| **Builder** | `pub fn showHelp(self: *Builder) !void`                                                       | Show help for the CLI                   |
-| **Builder** | `pub fn deinit(self: *Builder) void`                                                          | Free memory and cleanup commands        |
-| **Command** | `pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !Command` | Create a new command                    |
-| **Command** | `pub fn addFlag(self: *Command, flag: Flag) !void`                                            | Add a single flag                       |
-| **Command** | `pub fn addFlags(self: *Command, flags: []const Flag) !void`                                  | Add multiple flags                      |
-| **Command** | `pub fn parseFlags(self: *Command, args: []const []const u8) !void`                           | Parse CLI flags                         |
-| **Command** | `pub fn getBoolValue(self: *Command, flag_name: []const u8) bool`                             | Retrieve a boolean flag value           |
-| **Command** | `pub fn getIntValue(self: *Command, flag_name: []const u8) i32`                               | Retrieve an integer flag value          |
-| **Command** | `pub fn getStringValue(self: *Command, flag_name: []const u8) []const u8`                     | Retrieve a string flag value            |
-| **Command** | `pub fn getOptionalStringValue(self: *Command, flag_name: []const u8) ?[]const u8`            | Retrieve optional string flag value     |
-| **Command** | `pub fn execute(self: *Command, builder: *Builder) !void`                                     | Run the command's logic                 |
-| **Command** | `pub fn print(self: *const Command) !void`                                                    | Print the command summary               |
-| **Command** | `pub fn printHelp(self: *const Command) !void`                                                | Show help for a command                 |
-| **Command** | `pub fn deinit(self: *Command) void`                                                          | Free command memory                     |
+| Category    | Signature                                                                              | Description                             |
+| ----------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| **Builder** | `init(allocator: std.mem.Allocator, options: BuilderOptions) !Builder`                 | Create a new CLI builder                |
+| **Builder** | `addCommands(self: *Builder, cmds: []const Command) !void`                             | Register multiple commands              |
+| **Builder** | `execute(self: *Builder) !void`                                                        | Parse args and run the selected command |
+| **Builder** | `executeCmd(self: *Builder, cmd_name: []const u8, args: []const []const u8) !void`     | Run a specific command directly         |
+| **Builder** | `showInfo(self: *Builder) !void`                                                       | Print general CLI info                  |
+| **Builder** | `listCommands(self: *Builder) !void`                                                   | List all available commands             |
+| **Builder** | `showHelp(self: *Builder) !void`                                                       | Show help for the CLI                   |
+| **Builder** | `deinit(self: *Builder) void`                                                          | Free memory and cleanup commands        |
+| **Command** | `init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !Command` | Create a new command                    |
+| **Command** | `addFlag(self: *Command, flag: Flag) !void`                                            | Add a single flag                       |
+| **Command** | `addFlags(self: *Command, flags: []const Flag) !void`                                  | Add multiple flags                      |
+| **Command** | `parseFlags(self: *Command, args: []const []const u8) !void`                           | Parse CLI flags                         |
+| **Command** | `getBoolValue(self: *Command, flag_name: []const u8) bool`                             | Retrieve a boolean flag value           |
+| **Command** | `getIntValue(self: *Command, flag_name: []const u8) i32`                               | Retrieve an integer flag value          |
+| **Command** | `getStringValue(self: *Command, flag_name: []const u8) []const u8`                     | Retrieve a string flag value            |
+| **Command** | `getOptionalStringValue(self: *Command, flag_name: []const u8) ?[]const u8`            | Retrieve optional string flag value     |
+| **Command** | `execute(self: *Command, builder: *Builder) !void`                                     | Run the command's logic                 |
+| **Command** | `print(self: *const Command) !void`                                                    | Print the command summary               |
+| **Command** | `printHelp(self: *const Command) !void`                                                | Show help for a command                 |
+| **Command** | `deinit(self: *Command) void`                                                          | Free command memory                     |
 
 ## 🤝 Contributing
 
