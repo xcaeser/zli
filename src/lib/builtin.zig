@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub const styles = struct {
     // Reset
     pub const RESET = "\x1b[0m";

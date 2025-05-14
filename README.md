@@ -1,4 +1,4 @@
-# zli
+# 📟 zli
 
 A **blazing fast**, zero-cost-abstraction command-line interface (CLI) framework for Zig, inspired by Go's Cobra and Rust's clap. Build robust, ergonomic, and highly-performant CLI apps with ease.
 
