@@ -34,6 +34,7 @@ Written fully in Zig.
 - [x] Styled output
 - [x] Clear error messages
 - [ ] Positional arguments
+- [ ] Command aliases
 - [ ] Persistent flags
 - [ ] Full Windows support
 
@@ -162,13 +163,13 @@ const ttlFlag = zli.Flag{
 ### 🖥️ CLI Example
 
 ```sh
-$ blitz start --now=false --ttl 60
+$ blitz start --now=false --ttl 60 # both flag styles work  '=' and ' '
 Command flags provided: false and 60
 
 $ blitz version
 2.0.0
 
-$ blitz --help
+$ blitz --help # or -h. you can even use many shorthands -abc
 Blitz: a blazing fast CLI app.
 v2.0.0
 
