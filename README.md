@@ -37,6 +37,7 @@ Written fully in Zig.
 - [ ] Subcommand execution
 - [ ] Positional arguments
 - [ ] Persistent flags
+- [ ] Full windows support (_existence is pain_)
 
 ## 📦 Installation
 
