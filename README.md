@@ -7,6 +7,11 @@ Written fully in Zig.
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 
+> [!DISCLAIMER]
+> Still in development.
+> Expect breaking changes and limited features. But it's already usable for basic CLI apps.
+> Please open an issue for bugs, feature requests, or questions.
+
 ## 🚀 Why zli?
 
 - **Ultra-performant**: Minimal allocations, zero hidden costs, and native Zig speed.
