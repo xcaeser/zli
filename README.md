@@ -6,6 +6,7 @@ Written fully in Zig.
 
 [![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
+[![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 
 > [!IMPORTANT]
 > Still in development. But it's already usable for basic CLI apps.
