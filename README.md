@@ -9,53 +9,50 @@ Written fully in Zig.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 
 > [!IMPORTANT]
-> Still in development. But it's already usable for basic CLI apps.
+> ⚠️ Version 2.0 is now production-ready.
 >
-> Expect breaking changes and limited features.
-> Please open an issue for bugs, feature requests, or questions.
+> Subcommands, faster execution, and improved memory usage are live. Expect breaking changes from v1.x.
 
 ## 🚀 Why zli?
 
-- **Ultra-performant**: Minimal allocations, zero hidden costs, and native Zig speed.
-- **Modular**: Organize commands in a `cli/` folder, with a `root.zig` as your entrypoint.
-- **Type-safe flag parsing**: Booleans, ints, strings, with default values and shortcuts.
-- **Automatic help/version**: Built-in help and semantic versioning.
-- **User-friendly output**: Styled errors and help for a great UX.
-- **Extensible**: Add commands and flags with minimal boilerplate.
+- **Ultra-performant**: Buffered writer, low allocation footprint, and blazing fast parsing.
+- **Modular**: Structure commands as a tree with subcommands and categories.
+- **Type-safe flag parsing**: Booleans, ints, strings with default values and validation.
+- **Built-in help/version**: Help, usage, and semantic versioning included.
+- **User-friendly output**: Styled, aligned, and helpful CLI messages.
+- **Extensible & nested**: Supports subcommands, hierarchical execution.
 
 ## ✅ Features Checklist
 
 - [x] Commands
+- [x] Subcommand execution
+- [x] Shortcut flags (e.g., -n for --now)
 - [x] Advanced flag parsing
 - [x] Default values
-- [x] Shortcut flags (e.g., -n for --now)
-- [x] Automatic help generation
-- [x] Automatic usage generation
+- [x] Automatic help/usage generation
 - [x] Semantic versioning
 - [x] Styled output
 - [x] Clear error messages
-- [ ] Subcommand execution
 - [ ] Positional arguments
 - [ ] Persistent flags
-- [ ] Full windows support (_existence is pain_)
+- [ ] Full Windows support
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v1.1.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v2.0.0.tar.gz
 ```
 
 **Add to `build.zig`**
 
 ```zig
 const zli_dep = b.dependency("zli", .{ .target = target });
-
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
 ## 🏎️ Usage
 
-### Project Structure (Cobra-style)
+### Project Structure
 
 ```
 your-app/
@@ -66,6 +63,22 @@ your-app/
 │       └── version.zig    # Version command
 ├── main.zig
 └── build.zig
+```
+
+### Example: `src/main.zig`
+
+```zig
+const std = @import("std");
+const cli = @import("cli/root.zig");
+
+pub fn main() !void {
+    const allocator = std.heap.smp_allocator;
+
+    var blitz_cli = try cli.build(allocator);
+    defer blitz_cli.deinit();
+
+    try blitz_cli.execute();
+}
 ```
 
 ### Example: `src/cli/root.zig`
@@ -80,8 +93,7 @@ pub fn build(allocator: std.mem.Allocator) !zli.Builder {
     var root = try zli.Builder.init(allocator, .{
         .name = "blitz",
         .description = "Blitz: a blazing fast CLI app.",
-        .version = std.SemanticVersion.parse("1.0.0") catch unreachable,
-        // other options...
+        .version = std.SemanticVersion.parse("2.0.0") catch unreachable,
     });
 
     try root.addCommands(&.{
@@ -105,7 +117,7 @@ const options: zli.CommandOptions = .{
     .section = .Access,
 };
 
-pub fn register(zli_builder: *zli.Builder) !zli.Command {
+pub fn register(zli_builder: *zli.Builder) !*zli.Command {
     var cmd = try zli.Command.init(
         zli_builder.allocator,
         options,
@@ -123,7 +135,7 @@ pub fn register(zli_builder: *zli.Builder) !zli.Command {
 fn runCommand(ctx: zli.CommandContext) !void {
     const now = ctx.command.getBoolValue("now");
     const ttl = ctx.command.getIntValue("ttl");
-    std.debug.print("The things: {} and {d}\\n", .{ now, ttl });
+    std.debug.print("Command flags provided: {} and {d}\\n", .{ now, ttl });
 
     // Do anything you want here
     // e.g. start a server, run a task, etc.
@@ -147,32 +159,18 @@ const ttlFlag = zli.Flag{
 };
 ```
 
-### Example: `src/main.zig`
-
-```zig
-const std = @import("std");
-const cli = @import("cli/root.zig");
-
-pub fn main() !void {
-    const allocator = std.heap.smp_allocator;
-    var blitz_cli = try cli.build(allocator);
-    defer blitz_cli.deinit();
-    try blitz_cli.execute();
-}
-```
-
 ### 🖥️ CLI Example
 
 ```sh
-$ blitz start --now=false --ttl 60 # both flag styles work  '=' and ' '
-The things: false and 60
+$ blitz start --now=false --ttl 60
+Command flags provided: false and 60
 
 $ blitz version
-1.0.0
+2.0.0
 
-$ blitz --help # or -h. you can even use many shorthands -abc
+$ blitz --help
 Blitz: a blazing fast CLI app.
-v1.0.0
+v2.0.0
 
 Available commands:
    start      Start the blitz instance
