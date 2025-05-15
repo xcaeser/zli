@@ -13,18 +13,23 @@ Written fully in Zig.
 - **Modular**: Organize commands in a `cli/` folder, with a `root.zig` as your entrypoint.
 - **Type-safe flag parsing**: Booleans, ints, strings, with default values and shortcuts.
 - **Automatic help/version**: Built-in help and semantic versioning.
-- **Colorful, user-friendly output**: Styled errors and help for a great UX.
+- **User-friendly output**: Styled errors and help for a great UX.
 - **Extensible**: Add commands and flags with minimal boilerplate.
 
-## ✅ Features
+## ✅ Features Checklist
 
-- Command/subcommand structure
-- Advanced flag parsing (bool, int, string)
-- Default values and shortcuts
-- Automatic help and usage generation
-- Semantic versioning
-- Styled output (with terminal support)
-- Clear, actionable error messages
+- [x] Commands
+- [x] Advanced flag parsing
+- [x] Default values
+- [x] Shortcut flags (e.g., -n for --now)
+- [x] Automatic help generation
+- [x] Automatic usage generation
+- [x] Semantic versioning
+- [x] Styled output
+- [x] Clear error messages
+- [ ] Subcommand execution
+- [ ] Positional arguments
+- [ ] Persistent flags
 
 ## 📦 Installation
 
