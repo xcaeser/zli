@@ -8,8 +8,9 @@ Written fully in Zig.
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 
 > [!IMPORTANT]
-> Still in development.
-> Expect breaking changes and limited features. But it's already usable for basic CLI apps.
+> Still in development. But it's already usable for basic CLI apps.
+>
+> Expect breaking changes and limited features.
 > Please open an issue for bugs, feature requests, or questions.
 
 ## 🚀 Why zli?
