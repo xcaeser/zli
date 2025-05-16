@@ -144,7 +144,7 @@ pub fn build(allocator: std.mem.Allocator) !*CLICommand {
 fn runRoot(ctx: CLICommandContext) !void {
     // Modular AF :)
     // try ctx.command.listCommands();
-    //try ctx.command.listFlags();
+    // try ctx.command.listFlags();
     // try ctx.command.printHelp();
     // std.debug.print("{}\n", .{ctx.command.options.version.?});
 
@@ -179,6 +179,8 @@ const options: CLICommandOptions = .{
 pub fn register(parent_command: *CLICommand) !*CLICommand {
     var cmd = try CLICommand.init(parent_command.allocator, options, runCommand);
     const subcmd = try CLICommand.init(parent_command.allocator, suboptions, runCommand2);
+
+    try cmd.addCommand(subcmd);
 
     try cmd.addFlags(&.{ nowFlag, ttlFlag });
     return cmd;
