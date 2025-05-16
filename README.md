@@ -4,9 +4,10 @@ A **blazing fast**, zero-cost-abstraction command-line interface (CLI) framework
 
 Written fully in Zig.
 
-[![Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
+[![Version](https://img.shields.io/badge/ZLI-v3.0.1-green)](https://github.com/xcaeser/zli/releases)
 
 > [!IMPORTANT]
 > ⚠️ Version 3.0 introduces breaking changes and a new command model. (no more after this, no promises 🫢)
