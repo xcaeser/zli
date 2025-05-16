@@ -9,31 +9,29 @@ Written fully in Zig.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 
 > [!IMPORTANT]
-> ⚠️ Version 2.0 is now production-ready.
+> ⚠️ Version 3.0 introduces breaking changes and a new command model.
 >
-> Subcommands, faster execution, and improved memory usage are live. Expect breaking changes from v1.x.
+> `Builder` was removed. Commands are now modular and self-contained.
 
 ## 🚀 Why zli?
 
-- **Ultra-performant**: Buffered writer, low allocation footprint, and blazing fast parsing.
-- **Modular**: Structure commands as a tree with subcommands and categories.
+- **Ultra-performant**: Minimal allocations, fast hash map-based resolution, and zero overhead.
+- **Modular**: No more builders. Each `Command` manages its own subcommands and flags.
 - **Type-safe flag parsing**: Booleans, ints, strings with default values and validation.
-- **Built-in help/version**: Help, usage, and semantic versioning included.
-- **User-friendly output**: Styled, aligned, and helpful CLI messages.
-- **Extensible & nested**: Supports subcommands, hierarchical execution.
+- **Built-in help/version**: Auto-help, usage, and semantic versioning support.
+- **User-friendly output**: Styled, aligned, and informative CLI UX.
+- **Deprecation-aware**: Mark commands as deprecated with suggested alternatives.
+- **Supports positional arguments**
 
 ## ✅ Features Checklist
 
-- [x] Commands
-- [x] Subcommand execution
-- [x] Shortcut flags (e.g., -n for --now)
-- [x] Advanced flag parsing
-- [x] Default values
-- [x] Automatic help/usage generation
+- [x] Subcommands with hash map lookup
+- [x] Shorthand flags (e.g., -n for --now)
+- [x] Type-safe parsing with default values
+- [x] Auto help and version display
 - [x] Semantic versioning
-- [x] Styled output
-- [x] Clear error messages
-- [ ] Positional arguments
+- [x] Deprecation warnings and replacements
+- [x] Positional arguments support
 - [ ] Command aliases
 - [ ] Persistent flags
 - [ ] Full Windows support
@@ -41,7 +39,7 @@ Written fully in Zig.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v2.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.0.0.tar.gz
 ```
 
 **Add to `build.zig`**
@@ -53,6 +51,37 @@ exe.root_module.addImport("zli", zli_dep.module("zli"));
 
 ## 🏎️ Usage
 
+### 🖥️ Example Terminal Output
+
+Here’s a sample session with the CLI built using `zli` for a task runner app called **blitz**:
+
+```sh
+$ blitz --help
+Blitz CLI - your developer productivity toolkit.
+v3.0.0
+
+Available commands:
+   run             Run a script or task
+   version (v)     Show blitz CLI version
+
+Run 'blitz [command] --help' for details on a specific command.
+
+$ blitz version # or v
+3.0.0
+
+$ blitz run --script=build.zig --verbose true # both flag styles work  '=' and ' '
+Running script: build.zig
+Verbose output enabled.
+
+$ blitz run test --repeat 3 # or -r. you can even use many shorthands -abc
+Running test suite...
+Repeating 3 times...
+Test round 1: ✅
+Test round 2: ✅
+Test round 3: ✅
+All tests passed!
+```
+
 ### Project Structure
 
 ```
@@ -60,7 +89,7 @@ your-app/
 ├── src/
 │   └── cli/
 │       ├── root.zig       # CLI builder and command registration
-│       ├── start.zig      # Example command
+│       ├── run.zig      # Example command
 │       └── version.zig    # Version command
 ├── main.zig
 └── build.zig
@@ -74,11 +103,10 @@ const cli = @import("cli/root.zig");
 
 pub fn main() !void {
     const allocator = std.heap.smp_allocator;
+    var blitz = try cli.build(allocator);
+    defer blitz.deinit();
 
-    var blitz_cli = try cli.build(allocator);
-    defer blitz_cli.deinit();
-
-    try blitz_cli.execute();
+    try blitz.execute();
 }
 ```
 
@@ -87,71 +115,93 @@ pub fn main() !void {
 ```zig
 const std = @import("std");
 const zli = @import("zli");
-const start_cmd = @import("start.zig");
+
+const CLICommand = zli.Command;
+const CLICommandOptions = zli.CommandOptions;
+const CLICommandContext = zli.CommandContext;
+
+const run_cmd = @import("run.zig");
 const version_cmd = @import("version.zig");
 
-pub fn build(allocator: std.mem.Allocator) !zli.Builder {
-    var root = try zli.Builder.init(allocator, .{
+pub fn build(allocator: std.mem.Allocator) !*CLICommand {
+    var root = try CLICommand.init(allocator, .{
         .name = "blitz",
-        .description = "Blitz: a blazing fast CLI app.",
-        .version = std.SemanticVersion.parse("2.0.0") catch unreachable,
-    });
+        .description = "Blitz CLI - your developer productivity toolkit.",
+        .version = std.SemanticVersion.parse("3.0.0") catch unreachable,
+    },
+    runRoot,
+    );
 
     try root.addCommands(&.{
-        try start_cmd.register(&root),
-        try version_cmd.register(&root),
+        try run_cmd.register(root),
+        try version_cmd.register(root),
     });
 
     return root;
 }
+
+fn runRoot(ctx: CLICommandContext) !void {
+    // Modular AF :)
+    // try ctx.command.listCommands();
+    //try ctx.command.listFlags();
+    // try ctx.command.printHelp();
+    // std.debug.print("{}\n", .{ctx.command.options.version.?});
+
+    // Do anything you want here
+    // e.g. run a server, run a task, etc.
+    // ctx.command.printHelp() to print help for this command
+}
 ```
 
-### Example: Adding a Command (`src/cli/start.zig`)
+### Example: `src/cli/run.zig`
 
 ```zig
 const std = @import("std");
 const zli = @import("zli");
 
-const options: zli.CommandOptions = .{
-    .name = "start",
-    .description = "Start the blitz instance",
+const CLICommand = zli.Command;
+const CLICommandOptions = zli.CommandOptions;
+const CLICommandContext = zli.CommandContext;
+const CLIFlag = zli.Flag;
+
+const version_cmd = @import("version.zig");
+
+const options: CLICommandOptions = .{
+    .name = "run",
+    .description = "run the blitz instance",
     .section = .Access,
+    .version = std.SemanticVersion.parse("3.1.4") catch unreachable,
+    .deprecated = true,
+    .replaced_by = "start",
 };
 
-pub fn register(zli_builder: *zli.Builder) !*zli.Command {
-    var cmd = try zli.Command.init(
-        zli_builder.allocator,
-        options,
-        runCommand,
-    );
+pub fn register(parent_command: *CLICommand) !*CLICommand {
+    var cmd = try CLICommand.init(parent_command.allocator, options, runCommand);
+    const subcmd = try CLICommand.init(parent_command.allocator, suboptions, runCommand2);
 
-    try cmd.addFlags(&.{
-        nowFlag,
-        ttlFlag,
-    });
-
+    try cmd.addFlags(&.{ nowFlag, ttlFlag });
     return cmd;
 }
 
-fn runCommand(ctx: zli.CommandContext) !void {
-    const now = ctx.command.getBoolValue("now");
-    const ttl = ctx.command.getIntValue("ttl");
-    std.debug.print("Command flags provided: {} and {d}\\n", .{ now, ttl });
-
-    // Do anything you want here
-    // e.g. start a server, run a task, etc.
-    // ctx.command.printHelp() to print help for this command
+fn runCommand(ctx: CLICommandContext) !void {
+    _ = ctx;
 }
 
-const nowFlag = zli.Flag{
+fn runCommand2(ctx: CLICommandContext) !void {
+    const now = ctx.command.getBoolValue("now");
+    const ttl = ctx.command.getIntValue("ttl");
+    std.debug.print("Time to live: {d}\n", .{ttl});
+}
+
+const nowFlag = CLIFlag{
     .name = "now",
     .shortcut = "n",
-    .description = "Forces to start now",
+    .description = "Forces to run now",
     .flag_type = .Bool,
     .default_value = .{ .Bool = true },
 };
 
-const ttlFlag = zli.Flag{
+const ttlFlag = CLIFlag{
     .name = "ttl",
     .shortcut = "t",
     .description = "Time to live",
@@ -160,54 +210,35 @@ const ttlFlag = zli.Flag{
 };
 ```
 
-### 🖥️ CLI Example
+### Example: `src/cli/version.zig`
 
-```sh
-$ blitz start --now=false --ttl 60 # both flag styles work  '=' and ' '
-Command flags provided: false and 60
+```zig
+const std = @import("std");
+const zli = @import("../lib/zli.zig");
 
-$ blitz version
-2.0.0
+const CLICommand = zli.Command;
+const CLICommandOptions = zli.CommandOptions;
+const CLICommandContext = zli.CommandContext;
 
-$ blitz --help # or -h. you can even use many shorthands -abc
-Blitz: a blazing fast CLI app.
-v2.0.0
+const options: CLICommandOptions = .{
+    .name = "version",
+    .shortcut = "v",
+    .description = "blitz's current installed version",
+};
 
-Available commands:
-   start      Start the blitz instance
-   version    Blitz's current installed version
+pub fn register(parent_command: *CLICommand) !*CLICommand {
+    const cmd = try CLICommand.init(parent_command.allocator, options, runCommand);
+    return cmd;
+}
 
-Use 'blitz [command] --help' for more information about a command.
+fn runCommand(ctx: CLICommandContext) !void {
+    std.debug.print("{}\n", .{ctx.parent_command.?.options.version.?});  // Access the parent command
+}
 ```
 
-## 📚 API Summary
+## 👍 Contributing
 
-| Category    | Signature                                                                              | Description                             |
-| ----------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
-| **Builder** | `init(allocator: std.mem.Allocator, options: BuilderOptions) !Builder`                 | Create a new CLI builder                |
-| **Builder** | `addCommands(self: *Builder, cmds: []const Command) !void`                             | Register multiple commands              |
-| **Builder** | `execute(self: *Builder) !void`                                                        | Parse args and run the selected command |
-| **Builder** | `executeCmd(self: *Builder, cmd_name: []const u8, args: []const []const u8) !void`     | Run a specific command directly         |
-| **Builder** | `showInfo(self: *Builder) !void`                                                       | Print general CLI info                  |
-| **Builder** | `listCommands(self: *Builder) !void`                                                   | List all available commands             |
-| **Builder** | `showHelp(self: *Builder) !void`                                                       | Show help for the CLI                   |
-| **Builder** | `deinit(self: *Builder) void`                                                          | Free memory and cleanup commands        |
-| **Command** | `init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !Command` | Create a new command                    |
-| **Command** | `addFlag(self: *Command, flag: Flag) !void`                                            | Add a single flag                       |
-| **Command** | `addFlags(self: *Command, flags: []const Flag) !void`                                  | Add multiple flags                      |
-| **Command** | `parseFlags(self: *Command, args: []const []const u8) !void`                           | Parse CLI flags                         |
-| **Command** | `getBoolValue(self: *Command, flag_name: []const u8) bool`                             | Retrieve a boolean flag value           |
-| **Command** | `getIntValue(self: *Command, flag_name: []const u8) i32`                               | Retrieve an integer flag value          |
-| **Command** | `getStringValue(self: *Command, flag_name: []const u8) []const u8`                     | Retrieve a string flag value            |
-| **Command** | `getOptionalStringValue(self: *Command, flag_name: []const u8) ?[]const u8`            | Retrieve optional string flag value     |
-| **Command** | `execute(self: *Command, builder: *Builder) !void`                                     | Run the command's logic                 |
-| **Command** | `print(self: *const Command) !void`                                                    | Print the command summary               |
-| **Command** | `printHelp(self: *const Command) !void`                                                | Show help for a command                 |
-| **Command** | `deinit(self: *Command) void`                                                          | Free command memory                     |
-
-## 🤝 Contributing
-
-Issues and pull requests are welcome! Please open an issue for bugs, feature requests, or questions.
+PRs and issues welcome. File bugs, suggest features, or optimize the API.
 
 ## 📝 License
 
