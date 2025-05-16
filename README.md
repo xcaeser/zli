@@ -26,11 +26,10 @@ Written fully in Zig.
 
 ## ✅ Features Checklist
 
-- [x] Subcommands with hash map lookup
-- [x] Shorthand flags (e.g., -n for --now)
+- [x] Commands & Subcommands
+- [x] Flags & Shorthands (e.g. `--now -abc`)
 - [x] Type-safe parsing with default values
 - [x] Auto help and version display
-- [x] Semantic versioning
 - [x] Deprecation warnings and replacements
 - [ ] Positional arguments support
 - [ ] Command aliases
