@@ -108,7 +108,7 @@ pub const Command = struct {
 
     pub fn listCommands(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
-            try stdout.print("No commands available.", .{});
+            try stdout.print("No commands available.\n", .{});
             return;
         }
 
@@ -204,22 +204,49 @@ pub const Command = struct {
                 try stdout.print("{s}\n\n", .{help});
             }
 
+            const parents = try self.getParents(self.allocator);
+            defer parents.deinit();
+
+            // Usage
             if (self.options.usage) |usage| {
                 try stdout.print("Usage: {s}\n", .{usage});
             } else {
-                try stdout.print("Usage: {s} [options]\n", .{self.options.name});
+                try stdout.print("Usage: ", .{});
+                for (parents.items) |name| {
+                    try stdout.print("{s} ", .{name});
+                }
+                try stdout.print("{s} [options]\n", .{self.options.name});
             }
 
             try stdout.print("\n", .{});
+
             try self.listCommands();
             try stdout.print("\n", .{});
+
             try self.listFlags();
-            try stdout.print("\n", .{});
-            try stdout.print("Run '{s} [command] --help' for more information about a command.\n", .{self.options.name});
+            if (self.flags.count() > 0) try stdout.print("\n", .{});
+
+            try stdout.print("Run: '", .{});
+            for (parents.items) |name| {
+                try stdout.print("{s} ", .{name});
+            }
+            try stdout.print("{s} [command] --help'\n", .{self.options.name});
         }
     }
 
-    // Get a boolean value from a flag
+    pub fn getParents(self: *const Command, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
+        var list = std.ArrayList([]const u8).init(allocator);
+
+        var cmd = self;
+        while (cmd.parent) |p| {
+            try list.append(p.options.name);
+            cmd = p;
+        }
+
+        std.mem.reverse([]const u8, list.items);
+        return list;
+    }
+
     pub fn getBoolValue(self: *const Command, flag_name: []const u8) bool {
         if (self.values.get(flag_name)) |value_str| {
             return std.mem.eql(u8, value_str, "true");
@@ -229,7 +256,6 @@ pub const Command = struct {
         return false; // Default to false if flag doesn't exist
     }
 
-    // Get an integer value from a flag
     pub fn getIntValue(self: *const Command, flag_name: []const u8) i32 {
         if (self.values.get(flag_name)) |value_str| {
             const trimmed = std.mem.trim(u8, value_str, " \t\r\n");
@@ -245,7 +271,6 @@ pub const Command = struct {
         return 0; // Default to 0 if flag doesn't exist
     }
 
-    // Get a string value from a flag
     pub fn getStringValue(self: *const Command, flag_name: []const u8) []const u8 {
         if (self.values.get(flag_name)) |value_str| {
             return value_str;
@@ -260,7 +285,6 @@ pub const Command = struct {
         return ""; // Default to empty string if flag doesn't exist
     }
 
-    // Get an optional string value from a flag (returns null if not found)
     pub fn getOptionalStringValue(self: *const Command, flag_name: []const u8) ?[]const u8 {
         if (self.values.get(flag_name)) |value_str| {
             return value_str;
@@ -494,6 +518,7 @@ pub const Command = struct {
             const name = args.items[0];
             const next = cmd.findCommand(name) orelse {
                 try stderr.print("Error: Unknown command '{s}'\n", .{name});
+                try stderr.print("\nRun '{s} --help' for more information about a command.\n", .{cmd.options.name});
                 std.process.exit(1);
             };
             _ = try popFront([]const u8, &args);
