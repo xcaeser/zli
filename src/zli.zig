@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("lib/builtin.zig");
+const builtin = @import("builtin.zig");
 const styles = builtin.styles;
 
 const stdout = std.io.getStdOut().writer();
@@ -54,7 +54,8 @@ pub const CommandOptions = struct {
 };
 
 pub const CommandContext = struct {
-    parent_command: ?*const Command = null,
+    root: *const Command,
+    direct_parent: *const Command,
     command: *const Command,
     allocator: std.mem.Allocator,
     env: ?std.process.EnvMap = null,
@@ -194,7 +195,7 @@ pub const Command = struct {
         if (self.options.version) |version| try stdout.print("{}\n", .{version});
     }
 
-    pub fn printHelp(self: *const Command) !void {
+    pub fn printHelp(self: *Command) !void {
         try self.checkDeprecated();
         if (!self.options.deprecated) {
             try self.showInfo();
@@ -212,8 +213,8 @@ pub const Command = struct {
                 try stdout.print("Usage: {s}\n", .{usage});
             } else {
                 try stdout.print("Usage: ", .{});
-                for (parents.items) |name| {
-                    try stdout.print("{s} ", .{name});
+                for (parents.items) |p| {
+                    try stdout.print("{s} ", .{p.options.name});
                 }
                 try stdout.print("{s} [options]\n", .{self.options.name});
             }
@@ -227,23 +228,27 @@ pub const Command = struct {
             if (self.flags.count() > 0) try stdout.print("\n", .{});
 
             try stdout.print("Run: '", .{});
-            for (parents.items) |name| {
-                try stdout.print("{s} ", .{name});
+            for (parents.items) |p| {
+                try stdout.print("{s} ", .{p.options.name});
             }
             try stdout.print("{s} [command] --help'\n", .{self.options.name});
         }
     }
 
-    pub fn getParents(self: *const Command, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
-        var list = std.ArrayList([]const u8).init(allocator);
+    pub fn getParents(self: *Command, allocator: std.mem.Allocator) !std.ArrayList(*Command) {
+        var list = std.ArrayList(*Command).init(allocator);
 
         var cmd = self;
         while (cmd.parent) |p| {
-            try list.append(p.options.name);
+            try list.append(p);
             cmd = p;
         }
 
-        std.mem.reverse([]const u8, list.items);
+        if (list.items.len == 0) {
+            try list.append(self); // fallback: self is root
+        }
+
+        std.mem.reverse(*Command, list.items);
         return list;
     }
 
@@ -305,6 +310,13 @@ pub const Command = struct {
     }
 
     pub fn addPositionalArg(self: *Command, pos_arg: PositionalArg) !void {
+        if (self.positional_args.items.len > 0) {
+            const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
+            if (last_arg.variadic) {
+                try stderr.print("Variadic args should only appear at the end.\n", .{});
+                std.process.exit(1);
+            }
+        }
         try self.positional_args.append(pos_arg);
     }
 
@@ -489,8 +501,14 @@ pub const Command = struct {
     }
 
     pub fn executeExecFn(self: *Command) !void {
+        const parents = try self.getParents(self.allocator);
+        defer parents.deinit();
+
+        const root = parents.items[0];
+        const parent = parents.items[parents.items.len - 1];
         const ctx = CommandContext{
-            .parent_command = self.parent,
+            .root = root,
+            .direct_parent = parent,
             .command = self,
             .allocator = self.allocator,
             // .positional_args = self.positional_args.items, // This needs to be the values passed
@@ -539,13 +557,14 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
+        const root = self;
         const ctx = CommandContext{
-            .parent_command = cmd.parent,
+            .root = root,
+            .direct_parent = cmd.parent orelse root,
             .command = cmd,
             .allocator = cmd.allocator,
-            .env = null,
-            .stdin = null,
         };
+
         try cmd.execFn(ctx);
     }
 
