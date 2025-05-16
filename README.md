@@ -9,7 +9,7 @@ Written fully in Zig.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 
 > [!IMPORTANT]
-> ⚠️ Version 3.0 introduces breaking changes and a new command model.
+> ⚠️ Version 3.0 introduces breaking changes and a new command model. (no more after this, no promises 🫢)
 >
 > `Builder` was removed. Commands are now modular and self-contained.
 
