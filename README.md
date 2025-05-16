@@ -9,10 +9,30 @@ Written fully in Zig.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 [![Version](https://img.shields.io/badge/ZLI-v3.1.1-green)](https://github.com/xcaeser/zli/releases)
 
-> [!IMPORTANT]
-> ⚠️ Version 3.0 introduces breaking changes and a new command model. (no more after this, no promises 🫢)
->
-> `Builder` was removed. Commands are now modular and self-contained.
+> [!TIP]
+> Commands are modular and self-contained.
+
+## 📖 Table of Contents
+
+- [📟 zli](#-zli)
+  - [📖 Table of Contents](#-table-of-contents)
+  - [📚 Documentation](#-documentation)
+  - [🚀 Why zli?](#-why-zli)
+  - [✅ Features Checklist](#-features-checklist)
+  - [📦 Installation](#-installation)
+  - [🏎️ Usage](#️-usage)
+    - [🖥️ Example Terminal Output](#️-example-terminal-output)
+    - [Project Structure](#project-structure)
+    - [Example: `src/main.zig`](#example-srcmainzig)
+    - [Example: `src/cli/root.zig`](#example-srcclirootzig)
+    - [Example: `src/cli/run.zig`](#example-srcclirunzig)
+    - [Example: `src/cli/version.zig`](#example-srccliversionzig)
+  - [👍 Contributing](#-contributing)
+  - [📝 License](#-license)
+
+## 📚 Documentation
+
+Read the [full documentation](docs.md) for detailed usage and examples.
 
 ## 🚀 Why zli?
 
