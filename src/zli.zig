@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin.zig");
+const builtin = @import("lib/builtin.zig");
 const styles = builtin.styles;
 
 const stdout = std.io.getStdOut().writer();
