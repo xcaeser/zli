@@ -39,7 +39,7 @@ Written fully in Zig.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.0.1.tar.gz
 ```
 
 **Add to `build.zig`**
@@ -58,7 +58,7 @@ Here’s a sample session with the CLI built using `zli` for a task runner app c
 ```sh
 $ blitz --help
 Blitz CLI - your developer productivity toolkit.
-v3.0.0
+v1.0.2
 
 Available commands:
    run             Run a script or task
@@ -67,7 +67,7 @@ Available commands:
 Run 'blitz [command] --help' for details on a specific command.
 
 $ blitz version # or v
-3.0.0
+1.0.2
 
 $ blitz run --script=build.zig --verbose true # both flag styles work  '=' and ' '
 Running script: build.zig
@@ -127,7 +127,7 @@ pub fn build(allocator: std.mem.Allocator) !*CLICommand {
     var root = try CLICommand.init(allocator, .{
         .name = "blitz",
         .description = "Blitz CLI - your developer productivity toolkit.",
-        .version = std.SemanticVersion.parse("3.0.0") catch unreachable,
+        .version = std.SemanticVersion.parse("1.0.2") catch unreachable,
     },
     runRoot,
     );

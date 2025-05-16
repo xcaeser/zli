@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
 
     // Add the library for consumers
     const lib = b.addStaticLibrary(.{
-        .name = "dotenv",
+        .name = "zli",
         .root_source_file = b.path("src/zli.zig"),
         .target = target,
         .optimize = optimize,
