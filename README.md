@@ -32,7 +32,7 @@ Written fully in Zig.
 - [x] Auto help and version display
 - [x] Semantic versioning
 - [x] Deprecation warnings and replacements
-- [x] Positional arguments support
+- [ ] Positional arguments support
 - [ ] Command aliases
 - [ ] Persistent flags
 - [ ] Full Windows support
