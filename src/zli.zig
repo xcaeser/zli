@@ -5,15 +5,6 @@ const styles = builtin.styles;
 const stdout = std.io.getStdOut().writer();
 const stderr = std.io.getStdErr().writer();
 
-pub const Section = enum {
-    Usage,
-    Configuration,
-    Access,
-    Help,
-    Advanced,
-    Experimental,
-};
-
 pub const FlagType = enum {
     Bool,
     Int,
@@ -40,7 +31,7 @@ pub const PositionalArg = struct {
 };
 
 pub const CommandOptions = struct {
-    section: ?Section = .Usage,
+    section_title: []const u8 = "General",
     name: []const u8,
     description: []const u8,
     version: ?std.SemanticVersion = null,
@@ -130,6 +121,51 @@ pub const Command = struct {
         }.lessThan);
 
         try printAlignedCommands(commands.items);
+    }
+
+    pub fn listCommandsBySection(self: *const Command) !void {
+        if (self.commands_by_name.count() == 0) {
+            try stdout.print("No commands available.\n", .{});
+            return;
+        }
+
+        var section_map = std.StringHashMap(std.ArrayList(*Command)).init(self.allocator);
+        defer {
+            var it = section_map.iterator();
+            while (it.next()) |entry| {
+                entry.value_ptr.*.deinit();
+            }
+            section_map.deinit();
+        }
+
+        var it = self.commands_by_name.iterator();
+        while (it.next()) |entry| {
+            const cmd = entry.value_ptr.*;
+            const section = cmd.options.section_title;
+
+            const list = try section_map.getOrPut(section);
+            if (!list.found_existing) {
+                list.value_ptr.* = std.ArrayList(*Command).init(self.allocator);
+            }
+            try list.value_ptr.*.append(cmd);
+        }
+
+        var sit = section_map.iterator();
+        while (sit.next()) |entry| {
+            const section = entry.key_ptr.*;
+            const cmds = entry.value_ptr.*;
+
+            try stdout.print("{s}:\n", .{section});
+
+            std.sort.insertion(*Command, cmds.items, {}, struct {
+                pub fn lessThan(_: void, a: *Command, b: *Command) bool {
+                    return std.mem.order(u8, a.options.name, b.options.name) == .lt;
+                }
+            }.lessThan);
+
+            try printAlignedCommands(cmds.items);
+            try stdout.print("\n", .{});
+        }
     }
 
     pub fn listFlags(self: *const Command) !void {
@@ -309,6 +345,7 @@ pub const Command = struct {
         for (commands) |cmd| try self.addCommand(cmd);
     }
 
+    // TODO
     pub fn addPositionalArg(self: *Command, pos_arg: PositionalArg) !void {
         if (self.positional_args.items.len > 0) {
             const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
@@ -342,7 +379,7 @@ pub const Command = struct {
     }
 
     // Improved parseFlags with better error handling
-    pub fn parseFlags(self: *Command, args: []const []const u8) !void {
+    fn parseFlags(self: *Command, args: []const []const u8) !void {
         var i: usize = 0;
         while (i < args.len) {
             const arg = args[i];
@@ -500,7 +537,7 @@ pub const Command = struct {
         return null;
     }
 
-    pub fn executeExecFn(self: *Command) !void {
+    fn executeExecFn(self: *Command) !void {
         const parents = try self.getParents(self.allocator);
         defer parents.deinit();
 
