@@ -12,13 +12,9 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
 
----
-
 ## 📚 Documentation
 
 See [docs.md](docs.md) for full usage, examples, and internals.
-
----
 
 ## 🚀 Highlights
 
@@ -27,8 +23,6 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Type-safe support for `bool`, `int`, `string`
 - Auto help/version/deprecation handling
 - Works like Cobra or clap, but in Zig
-
----
 
 ## 📦 Installation
 
@@ -42,8 +36,6 @@ Add to your `build.zig`:
 const zli_dep = b.dependency("zli", .{ .target = target });
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
-
----
 
 ## 🧪 Example
 
@@ -135,8 +127,6 @@ fn show(ctx: zli.CommandContext) !void {
 }
 ```
 
----
-
 ## 🗂 Suggested Structure
 
 ```
@@ -154,8 +144,6 @@ your-app/
 - You explicitly register subcommands
 - Root is the entry point
 
----
-
 ## ✅ Features Checklist
 
 - [x] Commands & subcommands
@@ -166,8 +154,6 @@ your-app/
 - [ ] Positional args
 - [ ] Command aliases
 - [ ] Persistent flags
-
----
 
 ## 📝 License
 
