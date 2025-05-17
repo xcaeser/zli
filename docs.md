@@ -9,6 +9,7 @@
   - [🛠️ Command (`zli.Command`)](#️-command-zlicommand)
   - [📂 CommandOptions](#-commandoptions)
   - [🧭 CommandContext](#-commandcontext)
+  - [🏷️ Flag](#️-flag)
   - [✅ Flag Parsing](#-flag-parsing)
   - [📈 Positional Args](#-positional-args)
   - [📎 Tips](#-tips)
@@ -182,18 +183,13 @@ const runCmd = try Command.init(
 );
 ```
 
-);
-
-````
-
-
 ---
 
 ## 🏷️ Flag
 
 Use flags to define options for your CLI command. Supports bool, int, string with default value.
 
-```zig
+````zig
 const Flag = struct {
     name: []const u8, // Required: --flag-name
     shortcut: ?[]const u8 = null, // Optional: -f
@@ -205,7 +201,7 @@ const Flag = struct {
         String: []const u8,
     },
 };
-````
+
 
 📌 Example:
 
@@ -216,7 +212,7 @@ const debugFlag = Flag{
     .flag_type = .Bool,
     .default_value = .{ .Bool = false },
 };
-```
+````
 
 📌 Adding a flag:
 
