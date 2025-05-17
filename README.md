@@ -94,6 +94,8 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
 
 fn showHelp(ctx: zli.CommandContext) !void {
     try ctx.command.printHelp();
+
+    // try ctx.command.listCommands();
 }
 ```
 
@@ -123,6 +125,8 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
 fn run(ctx: zli.CommandContext) !void {
     const now = ctx.command.getBoolValue("now");
     std.debug.print("Running now: {}\n", .{now});
+
+    // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
 }
 ```
 
@@ -140,7 +144,7 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
 }
 
 fn show(ctx: zli.CommandContext) !void {
-    std.debug.print("v1.0.0\n", .{});
+    std.debug.print("{}\n", .{ctx.root.options.version});
 }
 ```
 
