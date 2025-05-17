@@ -127,6 +127,7 @@ fn run(ctx: zli.CommandContext) !void {
     std.debug.print("Running now: {}\n", .{now});
 
     // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
+    // do whatever you want here
 }
 ```
 
