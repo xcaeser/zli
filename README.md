@@ -140,11 +140,12 @@ const CLICommand = zli.Command;
 const CLICommandOptions = zli.CommandOptions;
 const CLICommandContext = zli.CommandContext;
 
-const run_cmd = @import("run.zig");
-const version_cmd = @import("version.zig");
+const run = @import("run.zig");
+const version = @import("version.zig");
 
-pub fn build(allocator: std.mem.Allocator) !*CLICommand { // You can also pass anything you want here, you do need an allocator.
-    var root = try CLICommand.init(allocator, .{
+pub fn build(allocator: std.mem.Allocator) !*CLICommand { // You can also pass anything you want here
+    var root = try CLICommand.init(
+        allocator, .{
         .name = "blitz",
         .description = "Blitz CLI - your developer productivity toolkit.",
         .version = std.SemanticVersion.parse("1.0.2") catch unreachable,
@@ -152,11 +153,13 @@ pub fn build(allocator: std.mem.Allocator) !*CLICommand { // You can also pass a
     runRoot,
     );
 
-    try root.addCommands(&.{
-        try run_cmd.register(allocator),
-        try version_cmd.register(allocator),
-    });
+    const run_cmd = try run.register(allocator);
+    const version_cmd = try version.register(allocator);
 
+    try root.addCommands(&.{
+        run_cmd,
+        version_cmd,
+    });
 
     return root;
 }
