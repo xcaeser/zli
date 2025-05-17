@@ -280,10 +280,6 @@ pub const Command = struct {
             cmd = p;
         }
 
-        if (list.items.len == 0) {
-            try list.append(self); // fallback: self is root
-        }
-
         std.mem.reverse(*Command, list.items);
         return list;
     }
@@ -535,25 +531,6 @@ pub const Command = struct {
         if (self.commands_by_name.get(name_or_shortcut)) |cmd| return cmd;
         if (self.commands_by_shortcut.get(name_or_shortcut)) |cmd| return cmd;
         return null;
-    }
-
-    fn executeExecFn(self: *Command) !void {
-        const parents = try self.getParents(self.allocator);
-        defer parents.deinit();
-
-        const root = parents.items[0];
-        const parent = parents.items[parents.items.len - 1];
-        const ctx = CommandContext{
-            .root = root,
-            .direct_parent = parent,
-            .command = self,
-            .allocator = self.allocator,
-            // .positional_args = self.positional_args.items, // This needs to be the values passed
-        };
-        self.execFn(ctx) catch |err| {
-            try stderr.print("Error executing command: {s}\n", .{@errorName(err)});
-            std.process.exit(1);
-        };
     }
 
     pub fn execute(self: *Command) !void {
