@@ -47,7 +47,7 @@ pub const CommandOptions = struct {
 pub const CommandContext = struct {
     root: *const Command,
     direct_parent: *const Command,
-    command: *const Command,
+    command: *Command,
     allocator: std.mem.Allocator,
     env: ?std.process.EnvMap = null,
     stdin: ?std.fs.File = null,
@@ -557,7 +557,7 @@ pub const Command = struct {
     }
 
     pub fn execute(self: *Command) !void {
-        var bw = std.io.bufferedWriter(std.io.getStdOut().writer());
+        var bw = std.io.bufferedWriter(stdout);
         defer bw.flush() catch {};
         var input = std.process.args();
         _ = input.skip(); // skip program name

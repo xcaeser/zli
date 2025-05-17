@@ -20,7 +20,7 @@
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.1.2.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.1.3.tar.gz
 ```
 
 Add this in your `build.zig`:
