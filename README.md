@@ -143,7 +143,7 @@ const CLICommandContext = zli.CommandContext;
 const run_cmd = @import("run.zig");
 const version_cmd = @import("version.zig");
 
-pub fn build(allocator: std.mem.Allocator) !*CLICommand {
+pub fn build(allocator: std.mem.Allocator) !*CLICommand { // You can also pass anything you want here, you do need an allocator.
     var root = try CLICommand.init(allocator, .{
         .name = "blitz",
         .description = "Blitz CLI - your developer productivity toolkit.",
@@ -153,9 +153,10 @@ pub fn build(allocator: std.mem.Allocator) !*CLICommand {
     );
 
     try root.addCommands(&.{
-        try run_cmd.register(root),
-        try version_cmd.register(root),
+        try run_cmd.register(allocator),
+        try version_cmd.register(allocator),
     });
+
 
     return root;
 }
@@ -195,9 +196,9 @@ const options: CLICommandOptions = .{
     .replaced_by = "start",
 };
 
-pub fn register(parent_command: *CLICommand) !*CLICommand {
-    var cmd = try CLICommand.init(parent_command.allocator, options, runCommand);
-    const subcmd = try CLICommand.init(parent_command.allocator, suboptions, runCommand2);
+pub fn register(allocator: std.mem.Allocator) !*CLICommand { // You can also pass a parent command or anything you want
+    var cmd = try CLICommand.init(allocator, options, runCommand);
+    const subcmd = try CLICommand.init(allocator, suboptions, runCommand2);
 
     try cmd.addCommand(subcmd);
 
@@ -248,8 +249,8 @@ const options: CLICommandOptions = .{
     .description = "blitz's current installed version",
 };
 
-pub fn register(parent_command: *CLICommand) !*CLICommand {
-    const cmd = try CLICommand.init(parent_command.allocator, options, runCommand);
+pub fn register(allocator: std.mem.Allocator) !*CLICommand {
+    const cmd = try CLICommand.init(allocator, options, runCommand);
     return cmd;
 }
 
