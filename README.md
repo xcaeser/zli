@@ -37,6 +37,23 @@ const zli_dep = b.dependency("zli", .{ .target = target });
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
+## 🗂 Suggested Structure
+
+```
+your-app/
+├── build.zig
+├── src/
+│   ├── main.zig
+│   └── cli/
+│       ├── root.zig
+│       ├── run.zig
+│       └── version.zig
+```
+
+- Each command is in its own file
+- You explicitly register subcommands
+- Root is the entry point
+
 ## 🧪 Example
 
 ```zig
@@ -126,23 +143,6 @@ fn show(ctx: zli.CommandContext) !void {
     std.debug.print("v1.0.0\n", .{});
 }
 ```
-
-## 🗂 Suggested Structure
-
-```
-your-app/
-├── build.zig
-├── src/
-│   ├── main.zig
-│   └── cli/
-│       ├── root.zig
-│       ├── run.zig
-│       └── version.zig
-```
-
-- Each command is in its own file
-- You explicitly register subcommands
-- Root is the entry point
 
 ## ✅ Features Checklist
 
