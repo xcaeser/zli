@@ -557,7 +557,8 @@ pub const Command = struct {
     pub fn execute(self: *Command) !void {
         var bw = std.io.bufferedWriter(stdout);
         defer bw.flush() catch {};
-        var input = std.process.args();
+        var input = try std.process.argsWithAllocator(self.allocator);
+        defer input.deinit();
         _ = input.skip(); // skip program name
 
         var args = std.ArrayList([]const u8).init(self.allocator);
