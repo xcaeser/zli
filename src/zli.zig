@@ -2,8 +2,11 @@ const std = @import("std");
 const builtin = @import("lib/builtin.zig");
 const styles = builtin.styles;
 
-const stdout = std.io.getStdOut().writer();
-const stderr = std.io.getStdErr().writer();
+const Writer = std.io.GenericWriter(
+    std.fs.File,
+    std.fs.File.WriteError,
+    std.fs.File.write,
+);
 
 pub const FlagType = enum {
     Bool,
@@ -66,10 +69,14 @@ pub const Command = struct {
     commands_by_shortcut: std.StringHashMap(*Command),
     parent: ?*Command = null,
     allocator: std.mem.Allocator,
+    stdout: Writer,
+    stderr: Writer,
 
     pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
         const cmd = try allocator.create(Command);
         cmd.* = Command{
+            .stdout = std.io.getStdOut().writer(),
+            .stderr = std.io.getStdErr().writer(),
             .options = options,
             .flags = std.StringHashMap(Flag).init(allocator),
             .flag_values = std.StringHashMap([]const u8).init(allocator),
@@ -100,11 +107,11 @@ pub const Command = struct {
 
     pub fn listCommands(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
-            try stdout.print("No commands available.\n", .{});
+            try self.stdout.print("No commands available.\n", .{});
             return;
         }
 
-        try stdout.print("{s}:\n", .{self.options.commands_title});
+        try self.stdout.print("{s}:\n", .{self.options.commands_title});
 
         var commands = std.ArrayList(*Command).init(self.allocator);
         defer commands.deinit();
@@ -125,7 +132,7 @@ pub const Command = struct {
 
     pub fn listCommandsBySection(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
-            try stdout.print("No commands available.\n", .{});
+            try self.stdout.print("No commands available.\n", .{});
             return;
         }
 
@@ -155,7 +162,7 @@ pub const Command = struct {
             const section = entry.key_ptr.*;
             const cmds = entry.value_ptr.*;
 
-            try stdout.print("{s}:\n", .{section});
+            try self.stdout.print("{s}:\n", .{section});
 
             std.sort.insertion(*Command, cmds.items, {}, struct {
                 pub fn lessThan(_: void, a: *Command, b: *Command) bool {
@@ -164,26 +171,26 @@ pub const Command = struct {
             }.lessThan);
 
             try printAlignedCommands(cmds.items);
-            try stdout.print("\n", .{});
+            try self.stdout.print("\n", .{});
         }
     }
 
     pub fn listFlags(self: *const Command) !void {
         if (self.flags.count() > 0) {
-            try stdout.print("Flags:\n", .{});
+            try self.stdout.print("Flags:\n", .{});
             var it = self.flags.iterator();
             while (it.next()) |entry| {
                 const flag = entry.value_ptr.*;
 
                 // Print shortcut if available
                 if (flag.shortcut) |shortcut| {
-                    try stdout.print("  -{s}, ", .{shortcut});
+                    try self.stdout.print("  -{s}, ", .{shortcut});
                 } else {
-                    try stdout.print("      ", .{});
+                    try self.stdout.print("      ", .{});
                 }
 
                 // Print flag name and description
-                try stdout.print("--{s}\t{s} [{s}]", .{
+                try self.stdout.print("--{s}\t{s} [{s}]", .{
                     flag.name,
                     flag.description,
                     @tagName(flag.flag_type),
@@ -191,13 +198,13 @@ pub const Command = struct {
 
                 // Print default value
                 switch (flag.flag_type) {
-                    .Bool => try stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
-                    .Int => try stdout.print(" (default: {})", .{flag.default_value.Int}),
+                    .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
+                    .Int => try self.stdout.print(" (default: {})", .{flag.default_value.Int}),
                     .String => if (flag.default_value.String.len > 0) {
-                        try stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
+                        try self.stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
                     },
                 }
-                try stdout.print("\n", .{});
+                try self.stdout.print("\n", .{});
             }
         }
     }
@@ -205,17 +212,17 @@ pub const Command = struct {
     fn checkDeprecated(self: *const Command) !void {
         if (self.options.deprecated) {
             if (self.options.version) |version| {
-                try stdout.print("'{s}' v{} is deprecated\n", .{ self.options.name, version });
+                try self.stdout.print("'{s}' v{} is deprecated\n", .{ self.options.name, version });
             } else {
-                try stdout.print("'{s}' is deprecated\n", .{self.options.name});
+                try self.stdout.print("'{s}' is deprecated\n", .{self.options.name});
             }
 
             if (self.options.replaced_by) |new_cmd_name| {
-                try stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
+                try self.stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
             }
 
             if (self.parent) |parent| {
-                try stdout.print("\nRun '{s} [command] --help' for more information about a command.\n", .{parent.options.name});
+                try self.stdout.print("\nRun '{s} [command] --help' for more information about a command.\n", .{parent.options.name});
             }
 
             std.process.exit(1);
@@ -223,22 +230,22 @@ pub const Command = struct {
     }
 
     pub fn showInfo(self: *const Command) !void {
-        try stdout.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
-        if (self.options.version) |version| try stdout.print("{s}v{}{s}\n", .{ styles.DIM, version, styles.RESET });
+        try self.stdout.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
+        if (self.options.version) |version| try self.stdout.print("{s}v{}{s}\n", .{ styles.DIM, version, styles.RESET });
     }
 
     pub fn showVersion(self: *const Command) !void {
-        if (self.options.version) |version| try stdout.print("{}\n", .{version});
+        if (self.options.version) |version| try self.stdout.print("{}\n", .{version});
     }
 
     pub fn printHelp(self: *Command) !void {
         try self.checkDeprecated();
         if (!self.options.deprecated) {
             try self.showInfo();
-            try stdout.print("\n", .{});
+            try self.stdout.print("\n", .{});
 
             if (self.options.help) |help| {
-                try stdout.print("{s}\n\n", .{help});
+                try self.stdout.print("{s}\n\n", .{help});
             }
 
             const parents = try self.getParents(self.allocator);
@@ -246,28 +253,28 @@ pub const Command = struct {
 
             // Usage
             if (self.options.usage) |usage| {
-                try stdout.print("Usage: {s}\n", .{usage});
+                try self.stdout.print("Usage: {s}\n", .{usage});
             } else {
-                try stdout.print("Usage: ", .{});
+                try self.stdout.print("Usage: ", .{});
                 for (parents.items) |p| {
-                    try stdout.print("{s} ", .{p.options.name});
+                    try self.stdout.print("{s} ", .{p.options.name});
                 }
-                try stdout.print("{s} [options]\n", .{self.options.name});
+                try self.stdout.print("{s} [options]\n", .{self.options.name});
             }
 
-            try stdout.print("\n", .{});
+            try self.stdout.print("\n", .{});
 
             try self.listCommands();
-            try stdout.print("\n", .{});
+            try self.stdout.print("\n", .{});
 
             try self.listFlags();
-            if (self.flags.count() > 0) try stdout.print("\n", .{});
+            if (self.flags.count() > 0) try self.stdout.print("\n", .{});
 
-            try stdout.print("Run: '", .{});
+            try self.stdout.print("Run: '", .{});
             for (parents.items) |p| {
-                try stdout.print("{s} ", .{p.options.name});
+                try self.stdout.print("{s} ", .{p.options.name});
             }
-            try stdout.print("{s} [command] --help'\n", .{self.options.name});
+            try self.stdout.print("{s} [command] --help'\n", .{self.options.name});
         }
     }
 
@@ -345,7 +352,7 @@ pub const Command = struct {
         if (self.positional_args.items.len > 0) {
             const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
             if (last_arg.variadic) {
-                try stderr.print("Variadic args should only appear at the end.\n", .{});
+                try self.stderr.print("Variadic args should only appear at the end.\n", .{});
                 std.process.exit(1);
             }
         }
@@ -416,7 +423,7 @@ pub const Command = struct {
 
                     if (flag_info) |flag| {
                         if (flag.flag_type != .Bool and char_index < shortcuts.len - 1) {
-                            try stderr.print("Error: Non-boolean flag '-{c}' must be used separately or at the end of a flag group\n", .{shortcut_char});
+                            try self.stderr.print("Error: Non-boolean flag '-{c}' must be used separately or at the end of a flag group\n", .{shortcut_char});
                             return error.InvalidFlagCombination;
                         }
 
@@ -427,8 +434,8 @@ pub const Command = struct {
                                 try self.flag_values.put(flag.name, args[i + 1]);
                                 i += 1;
                             } else {
-                                try stderr.print("Error: Missing value for shorthand flag -{c}\n", .{shortcut_char});
-                                try stderr.print("Flag '{s}' requires a {s} value\n", .{ flag.name, @tagName(flag.flag_type) });
+                                try self.stderr.print("Error: Missing value for shorthand flag -{c}\n", .{shortcut_char});
+                                try self.stderr.print("Flag '{s}' requires a {s} value\n", .{ flag.name, @tagName(flag.flag_type) });
                                 return error.MissingValueForFlag;
                             }
                         } else {
@@ -436,13 +443,13 @@ pub const Command = struct {
                             if (flag.flag_type == .Bool) {
                                 try self.flag_values.put(flag.name, "true");
                             } else {
-                                try stderr.print("Error: Invalid flag combination\n", .{});
-                                try stderr.print("Non-boolean flag '-{c}' ({s}) cannot be combined with other flags\n", .{ shortcut_char, flag.name });
+                                try self.stderr.print("Error: Invalid flag combination\n", .{});
+                                try self.stderr.print("Non-boolean flag '-{c}' ({s}) cannot be combined with other flags\n", .{ shortcut_char, flag.name });
                                 return error.InvalidFlagCombination;
                             }
                         }
                     } else {
-                        try stderr.print("Error: Unknown shorthand flag: -{c}\n", .{shortcut_char});
+                        try self.stderr.print("Error: Unknown shorthand flag: -{c}\n", .{shortcut_char});
                         return error.UnknownFlag;
                     }
                 }
@@ -537,15 +544,15 @@ pub const Command = struct {
         while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
             const name = args.items[0];
             const next = current.findCommand(name) orelse {
-                try stderr.print("Error: Unknown command '{s}'\n", .{name});
+                try self.stderr.print("Error: Unknown command '{s}'\n", .{name});
                 const parents = try current.getParents(self.allocator);
                 defer parents.deinit();
 
-                try stderr.print("\nRun: '", .{});
+                try self.stderr.print("\nRun: '", .{});
                 for (parents.items) |p| {
-                    try stderr.print("{s} ", .{p.options.name});
+                    try self.stderr.print("{s} ", .{p.options.name});
                 }
-                try stderr.print("{s} [command] --help'\n", .{current.options.name});
+                try self.stderr.print("{s} [command] --help'\n", .{current.options.name});
                 std.process.exit(1);
             };
             _ = try popFront([]const u8, args);
@@ -555,9 +562,10 @@ pub const Command = struct {
     }
 
     pub fn execute(self: *Command) !void {
-        var bw = std.io.bufferedWriter(stdout);
+        var bw = std.io.bufferedWriter(self.stdout);
         defer bw.flush() catch {};
-        var input = std.process.args();
+        var input = try std.process.argsWithAllocator(self.allocator);
+        defer input.deinit();
         _ = input.skip(); // skip program name
 
         var args = std.ArrayList([]const u8).init(self.allocator);
@@ -581,11 +589,11 @@ pub const Command = struct {
             const parents = try cmd.getParents(self.allocator);
             defer parents.deinit();
 
-            try stderr.print("\nRun: '", .{});
+            try self.stderr.print("\nRun: '", .{});
             for (parents.items) |p| {
-                try stderr.print("{s} ", .{p.options.name});
+                try self.stderr.print("{s} ", .{p.options.name});
             }
-            try stderr.print("{s} [command] --help'\n", .{cmd.options.name});
+            try self.stderr.print("{s} [command] --help'\n", .{cmd.options.name});
             std.process.exit(1);
         };
 
@@ -607,16 +615,16 @@ pub const Command = struct {
         if (command.flags.get(flag_name)) |flag| {
             switch (flag.flag_type) {
                 .Bool => {
-                    try stderr.print("Boolean flag '--{s}' can be used without a value (defaults to true)\n", .{flag_name});
-                    try stderr.print("Or explicitly: --{s}=true or --{s}=false\n", .{ flag_name, flag_name });
+                    try command.stderr.print("Boolean flag '--{s}' can be used without a value (defaults to true)\n", .{flag_name});
+                    try command.stderr.print("Or explicitly: --{s}=true or --{s}=false\n", .{ flag_name, flag_name });
                 },
                 .Int => {
-                    try stderr.print("Integer flag '--{s}' requires a numeric value\n", .{flag_name});
-                    try stderr.print("Example: --{s}=123 or --{s} 123\n", .{ flag_name, flag_name });
+                    try command.stderr.print("Integer flag '--{s}' requires a numeric value\n", .{flag_name});
+                    try command.stderr.print("Example: --{s}=123 or --{s} 123\n", .{ flag_name, flag_name });
                 },
                 .String => {
-                    try stderr.print("String flag '--{s}' requires a text value\n", .{flag_name});
-                    try stderr.print("Example: --{s}=\"hello\" or --{s} hello\n", .{ flag_name, flag_name });
+                    try command.stderr.print("String flag '--{s}' requires a text value\n", .{flag_name});
+                    try command.stderr.print("Example: --{s}=\"hello\" or --{s} hello\n", .{ flag_name, flag_name });
                 },
             }
         }
@@ -626,6 +634,8 @@ pub const Command = struct {
 // HELPER FUNCTIONS
 
 fn printAlignedCommands(commands: []*Command) !void {
+    const stdout = std.io.getStdOut().writer();
+
     // Step 1: determine the maximum width of name + shortcut
     var max_width: usize = 0;
     for (commands) |cmd| {
@@ -668,6 +678,8 @@ fn printAlignedCommands(commands: []*Command) !void {
 
 // Print a human-friendly error message for flag errors
 fn printError(err: anyerror, flag_name: []const u8, value: ?[]const u8) !void {
+    const stderr = std.io.getStdErr().writer();
+
     switch (err) {
         error.MissingValueForFlag => {
             try stderr.print("{s}Error:{s} Missing value for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
