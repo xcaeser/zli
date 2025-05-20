@@ -461,6 +461,25 @@ pub const Command = struct {
         }
     }
 
+    fn parseFlagsV2(self: *Command, args: *std.ArrayList([]const u8)) !void {
+        _ = self;
+        for (args.items, 0..args.items.len) |arg, i| {
+            _ = i;
+            // handle -- and next value is not null
+            if (std.mem.eql(u8, arg, "--")) {}
+            // handle space
+            // handle =
+            // handle -
+            // handle space
+            //
+        }
+    }
+
+    fn parsePositionalArgs(self: *Command, args: *std.ArrayList([]const u8)) !void {
+        _ = self;
+        _ = args;
+    }
+
     // Helper function to find a flag by its shortcut
     fn findFlagByShortcut(self: *Command, shortcut: []const u8) ?Flag {
         var it = self.flags.iterator();
@@ -537,6 +556,7 @@ pub const Command = struct {
         return null;
     }
 
+    /// Traverse the commands to find the last one in the user input
     fn findLeaf(self: *Command, args: *std.ArrayList([]const u8)) !*Command {
         var current = self;
         while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
@@ -559,6 +579,7 @@ pub const Command = struct {
         return current;
     }
 
+    // Need to make find command, parse flags and parse pos_args execution in parallel
     pub fn execute(self: *Command) !void {
         var bw = std.io.bufferedWriter(self.stdout);
         defer bw.flush() catch {};
@@ -595,7 +616,7 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
-        // try cmd.parsePositionalArgs(&args);
+        try cmd.parsePositionalArgs(&args);
 
         const root = self;
         const ctx = CommandContext{
@@ -720,8 +741,3 @@ fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
     _ = list.pop(); // remove the last (now duplicate) element
     return first;
 }
-
-// fn println(comptime fmt: []const u8, args: anytype) !void {
-//     try stdout.print(fmt, args);
-//     try bw.flush();
-// }
