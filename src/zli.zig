@@ -92,7 +92,6 @@ pub const Command = struct {
         while (it.next()) |entry| {
             const cmd = entry.value_ptr.*;
             cmd.deinit();
-            self.allocator.destroy(cmd);
         }
         self.commands_by_name.deinit();
         self.commands_by_shortcut.deinit();
