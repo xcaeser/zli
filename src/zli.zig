@@ -52,8 +52,6 @@ pub const CommandContext = struct {
     direct_parent: *const Command,
     command: *Command,
     allocator: std.mem.Allocator,
-    env: ?std.process.EnvMap = null,
-    stdin: ?std.fs.File = null,
     // positional_args: [][]const u8,
 };
 
