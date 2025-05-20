@@ -207,26 +207,6 @@ pub const Command = struct {
         }
     }
 
-    fn checkDeprecated(self: *const Command) !void {
-        if (self.options.deprecated) {
-            if (self.options.version) |version| {
-                try self.stdout.print("'{s}' v{} is deprecated\n", .{ self.options.name, version });
-            } else {
-                try self.stdout.print("'{s}' is deprecated\n", .{self.options.name});
-            }
-
-            if (self.options.replaced_by) |new_cmd_name| {
-                try self.stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
-            }
-
-            if (self.parent) |parent| {
-                try self.stdout.print("\nRun '{s} [command] --help' for more information about a command.\n", .{parent.options.name});
-            }
-
-            std.process.exit(1);
-        }
-    }
-
     pub fn showInfo(self: *const Command) !void {
         try self.stdout.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
         if (self.options.version) |version| try self.stdout.print("{s}v{}{s}\n", .{ styles.DIM, version, styles.RESET });
@@ -556,6 +536,26 @@ pub const Command = struct {
         return null;
     }
 
+    fn checkDeprecated(self: *const Command) !void {
+        if (self.options.deprecated) {
+            if (self.options.version) |version| {
+                try self.stdout.print("'{s}' v{} is deprecated\n", .{ self.options.name, version });
+            } else {
+                try self.stdout.print("'{s}' is deprecated\n", .{self.options.name});
+            }
+
+            if (self.options.replaced_by) |new_cmd_name| {
+                try self.stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
+            }
+
+            if (self.parent) |parent| {
+                try self.stdout.print("\nRun '{s} [command] --help' for more information about a command.\n", .{parent.options.name});
+            }
+
+            std.process.exit(1);
+        }
+    }
+
     /// Traverse the commands to find the last one in the user input
     fn findLeaf(self: *Command, args: *std.ArrayList([]const u8)) !*Command {
         var current = self;
@@ -653,8 +653,6 @@ pub const Command = struct {
 // HELPER FUNCTIONS
 
 fn printAlignedCommands(commands: []*Command) !void {
-    const stdout = std.io.getStdOut().writer();
-
     // Step 1: determine the maximum width of name + shortcut
     var max_width: usize = 0;
     for (commands) |cmd| {
@@ -669,11 +667,11 @@ fn printAlignedCommands(commands: []*Command) !void {
         const desc = cmd.options.short_description orelse cmd.options.description;
 
         // Print name
-        try stdout.print("   {s}", .{cmd.options.name});
+        try cmd.stdout.print("   {s}", .{cmd.options.name});
 
         // Print shortcut directly if exists
         if (cmd.options.shortcut) |s| {
-            try stdout.print(" ({s})", .{s});
+            try cmd.stdout.print(" ({s})", .{s});
         }
 
         // Compute padding
@@ -690,8 +688,8 @@ fn printAlignedCommands(commands: []*Command) !void {
 
         const padding = max_width - printed_width;
 
-        try stdout.writeByteNTimes(' ', padding + 4); // 4-space gap between name and desc
-        try stdout.print("{s}\n", .{desc});
+        try cmd.stdout.writeByteNTimes(' ', padding + 4); // 4-space gap between name and desc
+        try cmd.stdout.print("{s}\n", .{desc});
     }
 }
 
@@ -731,6 +729,7 @@ fn printError(err: anyerror, flag_name: []const u8, value: ?[]const u8) !void {
     }
 }
 
+/// Pop the first element from the list and shift the rest
 fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
     if (list.items.len == 0) return error.Empty;
     const first = list.items[0];
