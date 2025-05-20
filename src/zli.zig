@@ -96,6 +96,7 @@ pub const Command = struct {
         }
         self.commands_by_name.deinit();
         self.commands_by_shortcut.deinit();
+        self.allocator.destroy(self);
     }
 
     pub fn listCommands(self: *const Command) !void {
