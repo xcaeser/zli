@@ -24,10 +24,10 @@
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.1.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.3.0.tar.gz
 ```
 
-**Note:** Please update the version in the URL above if `v3.2.1` is no longer the correct version for the described API changes.
+**Note:** Please update the version in the URL above if `v3.3.0` is no longer the correct version for the described API changes.
 
 Add this in your `build.zig`:
 
@@ -116,7 +116,7 @@ try root.addCommands(&.{ runCmd, anotherCmd });
 📌 Executing the command:
 
 ```zig
-try root.execute();
+try root_command.execute(.{}); // pass any data you want to the command .{.data = &my_data}
 ```
 
 ## 📂 CommandOptions
@@ -173,6 +173,7 @@ const CommandContext = struct {
     direct_parent: *const Command, // Parent of the currently executing command
     command: *Command, // The actual command being executed, u can access its flags and options and anything else
     allocator: std.mem.Allocator,
+    data: ?*anyopaque = null, // Optional: user-defined data pointer
 };
 ```
 
@@ -189,6 +190,9 @@ fn run(ctx: CommandContext) !void { // Call this whatever you want
     if (debug_mode) {
         std.debug.print("Debug mode enabled. Retries: {}, User: {s}\n", .{ retries, username });
     }
+
+    // Accessing context data
+    const data_ptr = ctx.getContextData(comptime T); // Get a pointer to user-defined data
 }
 ```
 
@@ -402,7 +406,7 @@ pub fn main() !void {
     defer root_command.deinit(); // Deinitialize the command tree
 
     // Execute the CLI. zli will parse arguments and run the appropriate command.
-    try root_command.execute();
+    try root_command.execute(.{}); // pass any data you want to the command .{.data = &my_data}
 }
 ```
 

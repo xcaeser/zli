@@ -73,6 +73,7 @@ pub const CommandContext = struct {
     command: *Command,
     allocator: std.mem.Allocator,
     positional_args: []const []const u8,
+    data: ?*anyopaque = null,
 
     // TODO: fix panic: integer cast truncated bits - later im tired
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
@@ -103,6 +104,10 @@ pub const CommandContext = struct {
             .pointer => |ptr_info| if (ptr_info.child == u8) "" else @compileError("Unsupported pointer type"),
             else => @compileError("Unsupported type for flag"),
         };
+    }
+
+    pub fn getContextData(self: *const CommandContext, comptime T: type) *T {
+        return @alignCast(@ptrCast(self.data.?));
     }
 };
 
@@ -538,7 +543,7 @@ pub const Command = struct {
     }
 
     // Need to make find command, parse flags and parse pos_args execution in parallel
-    pub fn execute(self: *Command) !void {
+    pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
         var bw = std.io.bufferedWriter(self.stdout);
         defer bw.flush() catch {};
 
@@ -577,6 +582,7 @@ pub const Command = struct {
             .command = cmd,
             .allocator = cmd.allocator,
             .positional_args = args.items,
+            .data = context.data,
         };
 
         try cmd.execFn(ctx);

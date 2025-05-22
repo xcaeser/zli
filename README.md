@@ -7,7 +7,7 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.2.1-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.3.0-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -28,7 +28,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.1.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.3.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -67,7 +67,7 @@ pub fn main() !void {
     var root = try cli.build(allocator);
     defer root.deinit();
 
-    try root.execute();
+    try root.execute(.{}); // You can pass any data here try root.execute(.{.data = &my_data});
 }
 ```
 
@@ -130,6 +130,9 @@ fn run(ctx: zli.CommandContext) !void {
     // for (ctx.positional_args) |arg| {
     //     std.debug.print("Arg is: {s}\n", .{arg});
     // }
+
+
+    const pointer_to_data = ctx.getContextData(comptime T); // returns a pointer to the data you passed in main.zig, T can be any type (struct, union, etc.)
 
     // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
     // do whatever you want here
