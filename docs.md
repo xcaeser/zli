@@ -6,6 +6,7 @@
   - [📑 Table of Contents](#-table-of-contents)
   - [📦 Installation](#-installation)
   - [⚙️ General Design](#️-general-design)
+  - [✅ Features Checklist](#-features-checklist)
   - [🛠️ Command (`zli.Command`)](#️-command-zlicommand)
   - [📂 CommandOptions](#-commandoptions)
   - [🧭 CommandContext](#-commandcontext)
@@ -13,7 +14,7 @@
   - [🇺 FlagValue (`zli.FlagValue`)](#-flagvalue-zliflagvalue)
   - [✅ Flag Parsing](#-flag-parsing)
   - [📈 Positional Args (`zli.PositionalArg`)](#-positional-args-zlipositionalarg)
-  - [📎 Tips](#-tips)
+  - [📎 General Tips](#-general-tips)
   - [🧪 Full Example (Composable Blitz CLI)](#-full-example-composable-blitz-cli)
     - [`src/main.zig`](#srcmainzig)
     - [`src/cli/root.zig`](#srcclirootzig)
@@ -39,6 +40,15 @@ exe.root_module.addImport("zli", zli_dep.module("zli"));
 
 `zli` is built around a modular, command-centric design. Unlike libraries that rely heavily on a global builder pattern, `zli` empowers each `Command` to be a self-contained unit.
 
+## ✅ Features Checklist
+
+- [x] Commands & subcommands
+- [x] Flags & shorthands
+- [x] Type-safe flag values
+- [x] Help/version auto handling
+- [x] Deprecation notices
+- [x] Positional args
+
 Key principles:
 
 - **Commands are Central**: The `zli.Command` struct is the primary building block. Each command defines its own behavior, options, flags, and subcommands.
@@ -51,7 +61,7 @@ Key principles:
 You have full flexibility: your `register` functions can be named anything (`register`, `initCommand`, etc.), and so can your `execFn` handlers (`run`, `execute`, etc.)—as long as they match the required signature:
 
 ```zig
-fn(ctx: CommandContext) !void
+fn(ctx: zli.CommandContext) !void
 ```
 
 This keeps the API ergonomic and idiomatic Zig.
@@ -343,11 +353,14 @@ try cmd.addPositionalArg(.{
 });
 ```
 
-📌 Parsing Positional Arguments:
-The current API for accessing parsed positional arguments within `execFn` is still evolving. For now, you would need to inspect `ctx.command.positional_args` and correlate them with the remaining unparsed arguments after flag parsing. `zli`'s `execute` function will handle basic validation like required arguments.
-_(Developer Note: The `parsePositionalArgs` function exists in the new code but is currently a stub. The documentation should reflect the user-facing way to access these once fully implemented)._
+> [!IMPORTANT]
+>
+> Parsing Positional Arguments:
+> The current API for accessing parsed positional arguments within `execFn` is still evolving. For now, you would need to inspect `ctx.command.positional_args` and correlate them with the remaining unparsed arguments after flag parsing. `zli`'s `execute` function will handle basic validation like required arguments.
+>
+> _(Developer Note: The `parsePositionalArgs` function exists in the new code but is currently a stub. The documentation should reflect the user-facing way to access these once fully implemented)._
 
-## 📎 Tips
+## 📎 General Tips
 
 - **Help Messages**:
   - Use `cmd.printHelp()` to show the full, auto-generated help message for a command.
@@ -381,10 +394,8 @@ const std = @import("std");
 const cli_builder = @import("cli/root.zig"); // Adjusted path
 
 pub fn main() !void {
-    // Using GeneralPurposeAllocator for explicit resource management in an application
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit(); // Ensure allocator resources are freed
-    const allocator = gpa.allocator();
+
+    const allocator = std.heap.smp_allocator;
 
     // Build the root command structure from our cli module
     const root_command = try cli_builder.build(allocator);
@@ -405,8 +416,8 @@ const std = @import("std");
 const zli = @import("zli");
 
 // Import subcommand modules
-const run_cmd_module = @import("./run.zig");
-const version_cmd_module = @import("./version.zig");
+const run = @import("./run.zig");
+const version = @import("./version.zig");
 
 // This function constructs and returns the configured root command.
 pub fn build(allocator: std.mem.Allocator) !*zli.Command {
@@ -421,8 +432,8 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
 
     // Register subcommands by calling their respective 'register' functions
     try root.addCommands(&.{
-        try run_cmd_module.register(allocator),
-        try version_cmd_module.register(allocator),
+        try run.register(allocator),
+        try version.register(allocator),
     });
 
     return root;
