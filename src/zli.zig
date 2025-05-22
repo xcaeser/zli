@@ -14,16 +14,36 @@ pub const FlagType = enum {
     String,
 };
 
+pub const FlagValue = union(FlagType) {
+    Bool: bool,
+    Int: i32,
+    String: []const u8,
+};
+
 pub const Flag = struct {
     name: []const u8,
     shortcut: ?[]const u8 = null,
     description: []const u8,
-    flag_type: FlagType,
-    default_value: union(FlagType) {
-        Bool: bool,
-        Int: i32,
-        String: []const u8,
-    },
+    type: FlagType,
+    default_value: FlagValue,
+
+    fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
+        return switch (self.type) {
+            .Bool => {
+                if (std.mem.eql(u8, value, "true")) return FlagValue{ .Bool = true };
+                if (std.mem.eql(u8, value, "false")) return FlagValue{ .Bool = false };
+                return error.InvalidBooleanValue;
+            },
+            .Int => FlagValue{ .Int = try std.fmt.parseInt(i32, value, 10) },
+            .String => FlagValue{ .String = value },
+        };
+    }
+
+    fn safeEvaluate(self: *const Flag, value: []const u8) !FlagValue {
+        return self.evaluateValueType(value) catch {
+            return error.InvalidFlagValue;
+        };
+    }
 };
 
 pub const PositionalArg = struct {
@@ -52,19 +72,54 @@ pub const CommandContext = struct {
     direct_parent: *const Command,
     command: *Command,
     allocator: std.mem.Allocator,
-    // positional_args: [][]const u8,
+
+    pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
+        if (self.command.flag_values.get(flag_name)) |val| {
+            return switch (val) {
+                .Bool => |b| if (T == bool) b else getDefaultValue(T),
+                .Int => |i| if (@typeInfo(T) == .int) @as(T, @intCast(i)) else getDefaultValue(T),
+                .String => |s| if (T == []const u8) s else getDefaultValue(T),
+            };
+        }
+
+        if (self.command.findFlag(flag_name)) |found_flag| {
+            return switch (found_flag.default_value) {
+                .Bool => |b| if (T == bool) b else getDefaultValue(T),
+                .Int => |i| if (@typeInfo(T) == .int) @as(T, @intCast(i)) else getDefaultValue(T),
+                .String => |s| if (T == []const u8) s else getDefaultValue(T),
+            };
+        }
+
+        // Should be unreachable if all flags have defaults and validation is correct.
+        unreachable;
+    }
+
+    fn getDefaultValue(comptime T: type) T {
+        return switch (@typeInfo(T)) {
+            .bool => false,
+            .int => 0,
+            .pointer => |ptr_info| if (ptr_info.child == u8) "" else @compileError("Unsupported pointer type"),
+            else => @compileError("Unsupported type for flag"),
+        };
+    }
 };
 
 const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 
 pub const Command = struct {
     options: CommandOptions,
-    flags: std.StringHashMap(Flag),
-    flag_values: std.StringHashMap([]const u8),
+
+    flags_by_name: std.StringHashMap(Flag),
+    flags_by_shortcut: std.StringHashMap(Flag),
+    flag_values: std.StringHashMap(FlagValue),
+
     positional_args: std.ArrayList(PositionalArg),
+
     execFn: ExecFn,
+
     commands_by_name: std.StringHashMap(*Command),
     commands_by_shortcut: std.StringHashMap(*Command),
+
     parent: ?*Command = null,
     allocator: std.mem.Allocator,
     stdout: Writer,
@@ -76,10 +131,11 @@ pub const Command = struct {
             .stdout = std.io.getStdOut().writer(),
             .stderr = std.io.getStdErr().writer(),
             .options = options,
-            .flags = std.StringHashMap(Flag).init(allocator),
-            .flag_values = std.StringHashMap([]const u8).init(allocator),
             .positional_args = std.ArrayList(PositionalArg).init(allocator),
             .execFn = execFn,
+            .flags_by_name = std.StringHashMap(Flag).init(allocator),
+            .flags_by_shortcut = std.StringHashMap(Flag).init(allocator),
+            .flag_values = std.StringHashMap(FlagValue).init(allocator),
             .commands_by_name = std.StringHashMap(*Command).init(allocator),
             .commands_by_shortcut = std.StringHashMap(*Command).init(allocator),
             .allocator = allocator,
@@ -89,9 +145,11 @@ pub const Command = struct {
     }
 
     pub fn deinit(self: *Command) void {
-        self.flags.deinit();
-        self.flag_values.deinit();
         self.positional_args.deinit();
+
+        self.flags_by_name.deinit();
+        self.flags_by_shortcut.deinit();
+        self.flag_values.deinit();
 
         var it = self.commands_by_name.iterator();
         while (it.next()) |entry| {
@@ -174,9 +232,9 @@ pub const Command = struct {
     }
 
     pub fn listFlags(self: *const Command) !void {
-        if (self.flags.count() > 0) {
+        if (self.flags_by_name.count() > 0) {
             try self.stdout.print("Flags:\n", .{});
-            var it = self.flags.iterator();
+            var it = self.flags_by_name.iterator();
             while (it.next()) |entry| {
                 const flag = entry.value_ptr.*;
 
@@ -191,11 +249,11 @@ pub const Command = struct {
                 try self.stdout.print("--{s}\t{s} [{s}]", .{
                     flag.name,
                     flag.description,
-                    @tagName(flag.flag_type),
+                    @tagName(flag.type),
                 });
 
                 // Print default value
-                switch (flag.flag_type) {
+                switch (flag.type) {
                     .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
                     .Int => try self.stdout.print(" (default: {})", .{flag.default_value.Int}),
                     .String => if (flag.default_value.String.len > 0) {
@@ -246,7 +304,7 @@ pub const Command = struct {
             try self.stdout.print("\n", .{});
 
             try self.listFlags();
-            if (self.flags.count() > 0) try self.stdout.print("\n", .{});
+            if (self.flags_by_name.count() > 0) try self.stdout.print("\n", .{});
 
             try self.stdout.print("Run: '", .{});
             for (parents.items) |p| {
@@ -267,53 +325,6 @@ pub const Command = struct {
 
         std.mem.reverse(*Command, list.items);
         return list;
-    }
-
-    pub fn getBoolValue(self: *const Command, flag_name: []const u8) bool {
-        if (self.flag_values.get(flag_name)) |value_str| {
-            return std.mem.eql(u8, value_str, "true");
-        } else if (self.flags.get(flag_name)) |flag| {
-            return flag.default_value == .Bool and flag.default_value.Bool;
-        }
-        return false; // Default to false if flag doesn't exist
-    }
-
-    pub fn getIntValue(self: *const Command, flag_name: []const u8) i32 {
-        if (self.flag_values.get(flag_name)) |value_str| {
-            const trimmed = std.mem.trim(u8, value_str, " \t\r\n");
-            return std.fmt.parseInt(i32, trimmed, 10) catch {
-                if (self.flags.get(flag_name)) |flag| {
-                    return if (flag.default_value == .Int) flag.default_value.Int else 0;
-                }
-                return 0;
-            };
-        } else if (self.flags.get(flag_name)) |flag| {
-            return if (flag.default_value == .Int) flag.default_value.Int else 0;
-        }
-        return 0; // Default to 0 if flag doesn't exist
-    }
-
-    pub fn getStringValue(self: *const Command, flag_name: []const u8) []const u8 {
-        if (self.flag_values.get(flag_name)) |value_str| {
-            return value_str;
-        }
-
-        if (self.flags.get(flag_name)) |flag| {
-            if (flag.default_value == .String) {
-                return flag.default_value.String;
-            }
-        }
-
-        return ""; // Default to empty string if flag doesn't exist
-    }
-
-    pub fn getOptionalStringValue(self: *const Command, flag_name: []const u8) ?[]const u8 {
-        if (self.flag_values.get(flag_name)) |value_str| {
-            return value_str;
-        } else if (self.flags.get(flag_name)) |flag| {
-            return if (flag.default_value == .String) flag.default_value.String else null;
-        }
-        return null; // Return null if flag doesn't exist
     }
 
     pub fn addCommand(self: *Command, command: *Command) !void {
@@ -338,18 +349,10 @@ pub const Command = struct {
     }
 
     pub fn addFlag(self: *Command, flag: Flag) !void {
-        try self.flags.put(flag.name, flag);
+        try self.flags_by_name.put(flag.name, flag);
+        if (flag.shortcut) |shortcut| try self.flags_by_shortcut.put(shortcut, flag);
 
-        const default_value: []const u8 = switch (flag.default_value) {
-            .Bool => if (flag.default_value.Bool) "true" else "false",
-            .Int => blk: {
-                var buf: [12]u8 = undefined;
-                break :blk try std.fmt.bufPrint(&buf, "{}", .{flag.default_value.Int});
-            },
-            .String => flag.default_value.String,
-        };
-
-        try self.flag_values.put(flag.name, default_value);
+        try self.flag_values.put(flag.name, flag.default_value);
     }
 
     pub fn addFlags(self: *Command, flags: []const Flag) !void {
@@ -358,176 +361,139 @@ pub const Command = struct {
         }
     }
 
-    // Improved parseFlags with better error handling
-    fn parseFlags(self: *Command, args: []const []const u8) !void {
-        var i: usize = 0;
-        while (i < args.len) {
-            const arg = args[i];
+    // cli run --faas pp --me --op=77 -p -abc xxxx yyyy zzzz
+    fn parseFlags(self: *Command, args: *std.ArrayList([]const u8)) !void {
+        while (args.items.len > 0) {
+            const arg = args.items[0];
 
-            // Handle long flags (--flag)
+            // --long flag
             if (std.mem.startsWith(u8, arg, "--")) {
-                const flag_name = arg[2..];
+                // --flag=value
+                if (std.mem.indexOf(u8, arg[2..], "=")) |eql_index| {
+                    const flag_name = arg[2..][0..eql_index];
+                    const value = arg[2 + eql_index + 1 ..];
+                    const flag = self.findFlag(flag_name);
 
-                // Check if it's a flag=value format
-                if (std.mem.indexOf(u8, flag_name, "=")) |equal_index| {
-                    const name = flag_name[0..equal_index];
-                    const value = flag_name[equal_index + 1 ..];
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        std.process.exit(1);
+                    }
 
-                    self.handleFlagValue(name, value) catch |err| {
-                        try printError(err, name, value);
-                        return err;
+                    const flag_value = flag.?.safeEvaluate(value) catch {
+                        try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                        try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                        try self.displayCommandError();
+                        std.process.exit(1);
                     };
-                } else {
-                    // Regular --flag [value] format
-                    self.handleFlag(flag_name, args, &i) catch |err| {
-                        try printError(err, flag_name, null);
-                        // Suggest the correct usage if possible
-                        try suggestCorrectUsage(self, flag_name);
-                        return err;
-                    };
+
+                    try self.flag_values.put(flag.?.name, flag_value);
+                    _ = try popFront([]const u8, args); // remove --flag=value
                 }
-            }
-            // Handle shorthand flags (-f)
-            else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1 and !std.mem.eql(u8, arg, "-")) {
-                // Multiple flags can be combined (-abc)
-                const shortcuts = arg[1..];
 
-                // Process each character as a separate shorthand
-                for (shortcuts, 0..) |shortcut_char, char_index| {
-                    const shortcut = [_]u8{shortcut_char};
+                // --flag [value] or boolean
+                else {
+                    const flag_name = arg[2..];
+                    const flag = self.findFlag(flag_name);
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        std.process.exit(1);
+                    }
 
-                    // Find the corresponding flag for this shortcut
-                    const flag_info = self.findFlagByShortcut(&shortcut);
+                    const has_next = args.items.len > 1;
+                    const next_value = if (has_next) args.items[1] else null;
 
-                    if (flag_info) |flag| {
-                        if (flag.flag_type != .Bool and char_index < shortcuts.len - 1) {
-                            try self.stderr.print("Error: Non-boolean flag '-{c}' must be used separately or at the end of a flag group\n", .{shortcut_char});
-                            return error.InvalidFlagCombination;
-                        }
+                    if (flag.?.type == .Bool) {
+                        if (next_value) |val| {
+                            const is_true = std.mem.eql(u8, val, "true");
+                            const is_false = std.mem.eql(u8, val, "false");
 
-                        // Special case: if this is the last shortcut in the group
-                        // and it expects a non-boolean value, the next argument is the value
-                        if (char_index == shortcuts.len - 1 and flag.flag_type != .Bool) {
-                            if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "-")) {
-                                try self.flag_values.put(flag.name, args[i + 1]);
-                                i += 1;
-                            } else {
-                                try self.stderr.print("Error: Missing value for shorthand flag -{c}\n", .{shortcut_char});
-                                try self.stderr.print("Flag '{s}' requires a {s} value\n", .{ flag.name, @tagName(flag.flag_type) });
-                                return error.MissingValueForFlag;
-                            }
-                        } else {
-                            // Boolean shorthand flags default to true
-                            if (flag.flag_type == .Bool) {
-                                try self.flag_values.put(flag.name, "true");
-                            } else {
-                                try self.stderr.print("Error: Invalid flag combination\n", .{});
-                                try self.stderr.print("Non-boolean flag '-{c}' ({s}) cannot be combined with other flags\n", .{ shortcut_char, flag.name });
-                                return error.InvalidFlagCombination;
+                            if (is_true or is_false) {
+                                try self.flag_values.put(flag.?.name, .{ .Bool = is_true });
+                                _ = try popFront([]const u8, args); // --flag
+                                _ = try popFront([]const u8, args); // true/false
+                                continue;
                             }
                         }
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                        _ = try popFront([]const u8, args); // only --flag
                     } else {
-                        try self.stderr.print("Error: Unknown shorthand flag: -{c}\n", .{shortcut_char});
-                        return error.UnknownFlag;
+                        if (!has_next) {
+                            try self.stderr.print("Missing value for flag --{s}\n", .{flag_name});
+                            try self.displayCommandError();
+                            std.process.exit(1);
+                        }
+
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                            try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            try self.displayCommandError();
+                            std.process.exit(1);
+                        };
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // --flag
+                        _ = try popFront([]const u8, args); // value
                     }
                 }
             }
-            // else {
-            //     // This is neither a flag nor a shorthand - could be a positional argument
-            //     // For now, we'll just skip it, but you might want to collect these somewhere
-            // }
 
-            i += 1;
+            // -abc short flags
+            else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1 and !std.mem.eql(u8, arg, "-")) {
+                const shortcuts = arg[1..];
+
+                var j: usize = 0;
+                while (j < shortcuts.len) : (j += 1) {
+                    const shortcut = shortcuts[j .. j + 1];
+                    const flag = self.findFlag(shortcut);
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: -{c}\n", .{shortcuts[j]});
+                        std.process.exit(1);
+                    }
+
+                    if (flag.?.type == .Bool) {
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                    } else {
+                        if (j < shortcuts.len - 1) {
+                            try self.stderr.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
+                            std.process.exit(1);
+                        }
+
+                        if (args.items.len < 2) {
+                            try self.stderr.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
+                            std.process.exit(1);
+                        }
+
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.stderr.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
+                            try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            std.process.exit(1);
+                        };
+
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // value
+                    }
+                }
+
+                _ = try popFront([]const u8, args); // -abc
+            }
+
+            // not a flag
+            else break;
         }
     }
 
-    fn parseFlagsV2(self: *Command, args: *std.ArrayList([]const u8)) !void {
-        _ = self;
-        for (args.items, 0..args.items.len) |arg, i| {
-            _ = i;
-            // handle -- and next value is not null
-            if (std.mem.eql(u8, arg, "--")) {}
-            // handle space
-            // handle =
-            // handle -
-            // handle space
-            //
-        }
+    fn findFlag(self: *Command, name_or_shortcut: []const u8) ?Flag {
+        if (self.flags_by_name.get(name_or_shortcut)) |flag| return flag;
+        if (self.flags_by_shortcut.get(name_or_shortcut)) |flag| return flag;
+        return null;
     }
 
     fn parsePositionalArgs(self: *Command, args: *std.ArrayList([]const u8)) !void {
         _ = self;
         _ = args;
-    }
-
-    // Helper function to find a flag by its shortcut
-    fn findFlagByShortcut(self: *Command, shortcut: []const u8) ?Flag {
-        var it = self.flags.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.*.shortcut) |flag_shortcut| {
-                if (std.mem.eql(u8, flag_shortcut, shortcut)) {
-                    return entry.value_ptr.*;
-                }
-            }
-        }
-        return null;
-    }
-
-    // Helper function to handle a flag and its value with improved error handling
-    fn handleFlag(self: *Command, flag_name: []const u8, args: []const []const u8, i: *usize) !void {
-        const def_flag = self.flags.get(flag_name) orelse return error.UnknownFlag;
-        const flag = def_flag;
-        var value: []const u8 = undefined;
-
-        switch (flag.flag_type) {
-            .Bool => {
-                if (i.* + 1 < args.len and !std.mem.startsWith(u8, args[i.* + 1], "-")) {
-                    const next_arg = args[i.* + 1];
-                    if (std.mem.eql(u8, next_arg, "true") or std.mem.eql(u8, next_arg, "false")) {
-                        value = next_arg;
-                        i.* += 1;
-                    } else {
-                        value = "true";
-                    }
-                } else {
-                    value = "true";
-                }
-            },
-            else => {
-                if (i.* + 1 >= args.len or std.mem.startsWith(u8, args[i.* + 1], "-")) {
-                    return error.MissingValueForFlag;
-                }
-                value = args[i.* + 1];
-                try validateValue(flag, value);
-                i.* += 1;
-            },
-        }
-
-        try self.flag_values.put(flag_name, value);
-    }
-
-    // Helper function to handle flags in the flag=value format
-    fn handleFlagValue(self: *Command, flag_name: []const u8, value: []const u8) !void {
-        const def_flag = self.flags.get(flag_name) orelse return error.UnknownFlag;
-        try validateValue(def_flag, value);
-        try self.flag_values.put(flag_name, value);
-    }
-
-    fn validateValue(flag: Flag, value: []const u8) !void {
-        switch (flag.flag_type) {
-            .Bool => {
-                if (!std.mem.eql(u8, value, "true") and !std.mem.eql(u8, value, "false")) {
-                    return error.InvalidBooleanValue;
-                }
-            },
-            .Int => {
-                _ = std.fmt.parseInt(i32, value, 10) catch |err| {
-                    std.log.err("Failed to parse integer '{s}': {s}", .{ value, @errorName(err) });
-                    return error.InvalidIntegerValue;
-                };
-            },
-            .String => {},
-        }
     }
 
     pub fn findCommand(self: *const Command, name_or_shortcut: []const u8) ?*Command {
@@ -563,14 +529,7 @@ pub const Command = struct {
             const name = args.items[0];
             const next = current.findCommand(name) orelse {
                 try self.stderr.print("Error: Unknown command '{s}'\n", .{name});
-                const parents = try current.getParents(self.allocator);
-                defer parents.deinit();
-
-                try self.stderr.print("\nRun: '", .{});
-                for (parents.items) |p| {
-                    try self.stderr.print("{s} ", .{p.options.name});
-                }
-                try self.stderr.print("{s} [command] --help'\n", .{current.options.name});
+                try current.displayCommandError();
                 std.process.exit(1);
             };
             _ = try popFront([]const u8, args);
@@ -583,6 +542,7 @@ pub const Command = struct {
     pub fn execute(self: *Command) !void {
         var bw = std.io.bufferedWriter(self.stdout);
         defer bw.flush() catch {};
+
         var input = try std.process.argsWithAllocator(self.allocator);
         defer input.deinit();
         _ = input.skip(); // skip program name
@@ -604,15 +564,8 @@ pub const Command = struct {
 
         try cmd.checkDeprecated();
 
-        cmd.parseFlags(args.items) catch {
-            const parents = try cmd.getParents(self.allocator);
-            defer parents.deinit();
-
-            try self.stderr.print("\nRun: '", .{});
-            for (parents.items) |p| {
-                try self.stderr.print("{s} ", .{p.options.name});
-            }
-            try self.stderr.print("{s} [command] --help'\n", .{cmd.options.name});
+        cmd.parseFlags(&args) catch {
+            try cmd.displayCommandError();
             std.process.exit(1);
         };
 
@@ -629,24 +582,15 @@ pub const Command = struct {
         try cmd.execFn(ctx);
     }
 
-    // Suggest correct usage for a flag
-    fn suggestCorrectUsage(command: *Command, flag_name: []const u8) !void {
-        if (command.flags.get(flag_name)) |flag| {
-            switch (flag.flag_type) {
-                .Bool => {
-                    try command.stderr.print("Boolean flag '--{s}' can be used without a value (defaults to true)\n", .{flag_name});
-                    try command.stderr.print("Or explicitly: --{s}=true or --{s}=false\n", .{ flag_name, flag_name });
-                },
-                .Int => {
-                    try command.stderr.print("Integer flag '--{s}' requires a numeric value\n", .{flag_name});
-                    try command.stderr.print("Example: --{s}=123 or --{s} 123\n", .{ flag_name, flag_name });
-                },
-                .String => {
-                    try command.stderr.print("String flag '--{s}' requires a text value\n", .{flag_name});
-                    try command.stderr.print("Example: --{s}=\"hello\" or --{s} hello\n", .{ flag_name, flag_name });
-                },
-            }
+    fn displayCommandError(self: *Command) !void {
+        const parents = try self.getParents(self.allocator);
+        defer parents.deinit();
+
+        try self.stderr.print("\nRun: '", .{});
+        for (parents.items) |p| {
+            try self.stderr.print("{s} ", .{p.options.name});
         }
+        try self.stderr.print("{s} [command] --help'\n", .{self.options.name});
     }
 };
 
