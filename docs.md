@@ -110,6 +110,7 @@ try root.addCommand(runCmd);
 📌 Adding multiple commands:
 
 ```zig
+// try to add in alphabetical order if u have a lot of commands, however, this is not required. they will be sorted automatically
 try root.addCommands(&.{ runCmd, anotherCmd });
 ```
 
@@ -435,6 +436,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
     }, rootExec); // The function to call if 'blitz' is run without subcommands
 
     // Register subcommands by calling their respective 'register' functions
+    // try to add in alphabetical order if u have a lot of commands, however, this is not required. they will be sorted automatically
     try root.addCommands(&.{
         try run.register(allocator),
         try version.register(allocator),

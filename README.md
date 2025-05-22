@@ -85,6 +85,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
         .description = "Your dev toolkit CLI",
     }, showHelp);
 
+    // try to add in alphabetical order if u have a lot of commands, however, this is not required. they will be sorted automatically
     try root.addCommands(&.{
         try run.register(allocator),
         try version.register(allocator),
