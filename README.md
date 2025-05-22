@@ -126,6 +126,10 @@ fn run(ctx: zli.CommandContext) !void {
     const now = ctx.flag("now", bool); // type-safe flag value ctx.flag("flag_name", bool or int or []const u8)
     std.debug.print("Running now: {}\n", .{now});
 
+    // for (ctx.positional_args) |arg| {
+    //     std.debug.print("Arg is: {s}\n", .{arg});
+    // }
+
     // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
     // do whatever you want here
 }
