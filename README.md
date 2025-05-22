@@ -21,6 +21,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Modular commands & subcommands
 - Fast flag parsing (`--flag`, `--flag=value`, shorthand `-abc`)
 - Type-safe support for `bool`, `int`, `string`
+- positional arguments
 - Auto help/version/deprecation handling
 - Works like Cobra or clap, but in Zig
 
