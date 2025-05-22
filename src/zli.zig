@@ -113,6 +113,10 @@ pub const CommandContext = struct {
 
 const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 
+/// This is needed to fool the compiler that we are not doing dependency loop
+/// common error would error: dependency loop detected if this function is not passed to the init function.
+const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
+
 pub const Command = struct {
     options: CommandOptions,
 
@@ -132,7 +136,7 @@ pub const Command = struct {
     stdout: Writer,
     stderr: Writer,
 
-    pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
+    pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
         const cmd = try allocator.create(Command);
         cmd.* = Command{
             .stdout = std.io.getStdOut().writer(),
@@ -689,4 +693,171 @@ fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
     }
     _ = list.pop(); // remove the last (now duplicate) element
     return first;
+}
+
+// Test suite for CLI library
+
+test "popFront shifts list" {
+    const allocator = std.testing.allocator;
+    var list = std.ArrayList(i32).init(allocator);
+    defer list.deinit();
+    try list.append(1);
+    try list.append(2);
+    try list.append(3);
+    const first = try popFront(i32, &list);
+    try std.testing.expect(first == 1);
+    try std.testing.expect(list.items.len == 2);
+    try std.testing.expect(list.items[0] == 2);
+    try std.testing.expect(list.items[1] == 3);
+}
+
+test "popFront empty returns error Empty" {
+    const allocator = std.testing.allocator;
+    var list = std.ArrayList(i32).init(allocator);
+    defer list.deinit();
+    const err = popFront(i32, &list) catch |e| e;
+    try std.testing.expect(err == error.Empty);
+}
+
+test "evaluateValueType Bool and Int and String" {
+    var flag_bool = Flag{
+        .name = "b",
+        .shortcut = null,
+        .description = "",
+        .type = .Bool,
+        .default_value = FlagValue{ .Bool = false },
+    };
+    const val_true = try flag_bool.evaluateValueType("true");
+    try std.testing.expect(val_true.Bool);
+    const val_false = try flag_bool.evaluateValueType("false");
+    try std.testing.expect(!val_false.Bool);
+
+    var flag_int = Flag{
+        .name = "i",
+        .shortcut = null,
+        .description = "",
+        .type = .Int,
+        .default_value = FlagValue{ .Int = 0 },
+    };
+    const val = try flag_int.evaluateValueType("123");
+    try std.testing.expect(val.Int == 123);
+
+    var flag_str = Flag{
+        .name = "s",
+        .shortcut = null,
+        .description = "",
+        .type = .String,
+        .default_value = FlagValue{ .String = "" },
+    };
+    const sval = try flag_str.evaluateValueType("hello");
+    try std.testing.expect(std.mem.eql(u8, sval.String, "hello"));
+}
+
+test "safeEvaluate maps errors to InvalidFlagValue" {
+    var flag_int = Flag{
+        .name = "i",
+        .shortcut = null,
+        .description = "",
+        .type = .Int,
+        .default_value = FlagValue{ .Int = 0 },
+    };
+    const err = flag_int.safeEvaluate("not_int") catch |e| e;
+    try std.testing.expect(err == error.InvalidFlagValue);
+}
+
+test "addFlag and findFlag and flag_values default" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
+
+    defer cmd.deinit();
+    const flag = Flag{
+        .name = "foo",
+        .shortcut = "f",
+        .description = "",
+        .type = .Bool,
+        .default_value = FlagValue{ .Bool = true },
+    };
+    try cmd.addFlag(flag);
+    const byName = cmd.findFlag("foo");
+    try std.testing.expect(std.mem.eql(u8, byName.?.name, "foo"));
+    try std.testing.expect(byName.?.type == .Bool);
+    const stored = cmd.flag_values.get("foo").?;
+    try std.testing.expect(stored.Bool);
+    const byShort = cmd.findFlag("f");
+    try std.testing.expect(std.mem.eql(u8, byShort.?.name, "foo"));
+}
+
+test "parseFlags with --foo and --bar=5" {
+    const allocator = std.testing.allocator;
+
+    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
+
+    defer cmd.deinit();
+    const flag1 = Flag{ .name = "foo", .shortcut = "f", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
+    const flag2 = Flag{ .name = "bar", .shortcut = "b", .description = "", .type = .Int, .default_value = FlagValue{ .Int = 0 } };
+    try cmd.addFlags(&.{ flag1, flag2 });
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.append("--foo");
+    try args.append("--bar=5");
+    try cmd.parseFlags(&args);
+    try std.testing.expect(cmd.flag_values.get("foo").?.Bool);
+    try std.testing.expect(cmd.flag_values.get("bar").?.Int == 5);
+}
+
+test "parseFlags short flags grouping and value" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
+
+    defer cmd.deinit();
+    const f1 = Flag{ .name = "a", .shortcut = "a", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
+    const f2 = Flag{ .name = "b", .shortcut = "b", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
+    const f3 = Flag{ .name = "n", .shortcut = "n", .description = "", .type = .Int, .default_value = FlagValue{ .Int = 0 } };
+    try cmd.addFlags(&.{ f1, f2, f3 });
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.append("-abn");
+    try args.append("42");
+    try cmd.parseFlags(&args);
+    try std.testing.expect(cmd.flag_values.get("a").?.Bool);
+    try std.testing.expect(cmd.flag_values.get("b").?.Bool);
+    try std.testing.expect(cmd.flag_values.get("n").?.Int == 42);
+}
+
+test "findCommand and findLeaf" {
+    const allocator = std.testing.allocator;
+    var root = try Command.init(allocator, CommandOptions{ .name = "root", .description = "" }, dummyExec);
+    defer root.deinit();
+    const child = try Command.init(allocator, CommandOptions{ .name = "child", .description = "" }, dummyExec);
+
+    try root.addCommand(child);
+    const byName = root.findCommand("child");
+    try std.testing.expect(byName.? == child);
+    var args2 = std.ArrayList([]const u8).init(allocator);
+    defer args2.deinit();
+    try args2.append("child");
+    const leaf = try root.findLeaf(&args2);
+    try std.testing.expect(leaf == child);
+}
+
+test "getContextData returns typed data" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, CommandOptions{ .name = "cmd", .description = "" }, dummyExec);
+    defer cmd.deinit();
+    const Data = struct { a: i32 };
+    var d = Data{ .a = 7 };
+    var ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &[_][]const u8{},
+        .data = &d,
+    };
+    const dp = ctx.getContextData(Data);
+    try std.testing.expect(dp.a == 7);
+}
+
+fn dummyExec(_: CommandContext) !void {
+    return;
 }
