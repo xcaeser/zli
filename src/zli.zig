@@ -27,7 +27,6 @@ pub const Flag = struct {
     type: FlagType,
     default_value: FlagValue,
 
-    // TODO: fix panic: integer cast truncated bits - later im tired
     fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
             .Bool => {
@@ -73,7 +72,9 @@ pub const CommandContext = struct {
     direct_parent: *const Command,
     command: *Command,
     allocator: std.mem.Allocator,
+    positional_args: []const []const u8,
 
+    // TODO: fix panic: integer cast truncated bits - later im tired
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
         if (self.command.flag_values.get(flag_name)) |val| {
             return switch (val) {
@@ -528,13 +529,10 @@ pub const Command = struct {
         var current = self;
         while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
             const name = args.items[0];
-            const next = current.findCommand(name) orelse {
-                try self.stderr.print("Error: Unknown command '{s}'\n", .{name});
-                try current.displayCommandError();
-                std.process.exit(1);
-            };
+            const maybe_next = current.findCommand(name);
+            if (maybe_next == null) break; // Treat remaining args as positional
             _ = try popFront([]const u8, args);
-            current = next;
+            current = maybe_next.?;
         }
         return current;
     }
@@ -578,6 +576,7 @@ pub const Command = struct {
             .direct_parent = cmd.parent orelse root,
             .command = cmd,
             .allocator = cmd.allocator,
+            .positional_args = args.items,
         };
 
         try cmd.execFn(ctx);

@@ -7,7 +7,7 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.2.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.2.1-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -28,7 +28,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.1.tar.gz
 ```
 
 Add to your `build.zig`:

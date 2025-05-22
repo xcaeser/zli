@@ -24,10 +24,10 @@
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.1.tar.gz
 ```
 
-**Note:** Please update the version in the URL above if `v3.2.0` is no longer the correct version for the described API changes.
+**Note:** Please update the version in the URL above if `v3.2.1` is no longer the correct version for the described API changes.
 
 Add this in your `build.zig`:
 
