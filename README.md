@@ -7,7 +7,7 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.1.6-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.2.0-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -27,7 +27,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.1.6.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.2.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -123,7 +123,7 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
 }
 
 fn run(ctx: zli.CommandContext) !void {
-    const now = ctx.command.getBoolValue("now");
+    const now = ctx.flag("now", bool); // type-safe flag value ctx.flag("flag_name", bool or int or []const u8)
     std.debug.print("Running now: {}\n", .{now});
 
     // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
@@ -156,7 +156,7 @@ fn show(ctx: zli.CommandContext) !void {
 - [x] Type-safe flag values
 - [x] Help/version auto handling
 - [x] Deprecation notices
-- [ ] Positional args
+- [x] Positional args
 - [ ] Command aliases
 - [ ] Persistent flags
 

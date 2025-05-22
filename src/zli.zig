@@ -27,6 +27,7 @@ pub const Flag = struct {
     type: FlagType,
     default_value: FlagValue,
 
+    // TODO: fix panic: integer cast truncated bits - later im tired
     fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
             .Bool => {
