@@ -658,6 +658,19 @@ pub const Command = struct {
         return current;
     }
 
+    fn parseArgs(self: *Command, args: *std.ArrayList([]const u8), out_positionals: *std.ArrayList([]const u8)) !void {
+        while (args.items.len > 0) {
+            const arg = args.items[0];
+
+            if (std.mem.startsWith(u8, arg, "-")) {
+                try self.parseFlags(args);
+            } else {
+                const val = try popFront([]const u8, args);
+                try out_positionals.append(val);
+            }
+        }
+    }
+
     // Need to make find command, parse flags and parse pos_args execution in parallel
     pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
         var bw = std.io.bufferedWriter(self.stdout);
@@ -684,12 +697,9 @@ pub const Command = struct {
 
         try cmd.checkDeprecated();
 
-        cmd.parseFlags(&args) catch {
-            try cmd.displayCommandError();
-            std.process.exit(1);
-        };
-
-        try cmd.parsePositionalArgs(&args);
+        var pos_args = std.ArrayList([]const u8).init(self.allocator);
+        try cmd.parseArgs(&args, &pos_args);
+        try cmd.parsePositionalArgs(&pos_args);
 
         const root = self;
         const ctx = CommandContext{
@@ -697,7 +707,7 @@ pub const Command = struct {
             .direct_parent = cmd.parent orelse root,
             .command = cmd,
             .allocator = cmd.allocator,
-            .positional_args = args.items,
+            .positional_args = pos_args.items,
             .data = context.data,
         };
 
