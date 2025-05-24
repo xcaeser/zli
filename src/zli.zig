@@ -106,6 +106,17 @@ pub const CommandContext = struct {
         };
     }
 
+    pub fn getArg(self: *const CommandContext, name: []const u8) ?[]const u8 {
+        const spec = self.command.positional_args.items;
+        for (spec, 0..) |arg, i| {
+            if (std.mem.eql(u8, arg.name, name)) {
+                if (i < self.positional_args.len) return self.positional_args[i];
+                return null; // not provided
+            }
+        }
+        return null; // not defined
+    }
+
     pub fn getContextData(self: *const CommandContext, comptime T: type) *T {
         return @alignCast(@ptrCast(self.data.?));
     }
@@ -174,7 +185,6 @@ pub const Command = struct {
 
     pub fn listCommands(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
-            try self.stdout.print("No commands available.\n", .{});
             return;
         }
 
@@ -199,7 +209,6 @@ pub const Command = struct {
 
     pub fn listCommandsBySection(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
-            try self.stdout.print("No commands available.\n", .{});
             return;
         }
 
@@ -243,35 +252,89 @@ pub const Command = struct {
     }
 
     pub fn listFlags(self: *const Command) !void {
-        if (self.flags_by_name.count() > 0) {
-            try self.stdout.print("Flags:\n", .{});
-            var it = self.flags_by_name.iterator();
-            while (it.next()) |entry| {
-                const flag = entry.value_ptr.*;
+        if (self.flags_by_name.count() == 0) {
+            return;
+        }
 
-                // Print shortcut if available
-                if (flag.shortcut) |shortcut| {
-                    try self.stdout.print("  -{s}, ", .{shortcut});
-                } else {
-                    try self.stdout.print("      ", .{});
-                }
+        try self.stdout.print("Flags:\n", .{});
+        var it = self.flags_by_name.iterator();
+        while (it.next()) |entry| {
+            const flag = entry.value_ptr.*;
 
-                // Print flag name and description
-                try self.stdout.print("--{s}\t{s} [{s}]", .{
-                    flag.name,
-                    flag.description,
-                    @tagName(flag.type),
-                });
+            // Print shortcut if available
+            if (flag.shortcut) |shortcut| {
+                try self.stdout.print("  -{s}, ", .{shortcut});
+            } else {
+                try self.stdout.print("      ", .{});
+            }
 
-                // Print default value
-                switch (flag.type) {
-                    .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
-                    .Int => try self.stdout.print(" (default: {})", .{flag.default_value.Int}),
-                    .String => if (flag.default_value.String.len > 0) {
-                        try self.stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
-                    },
-                }
-                try self.stdout.print("\n", .{});
+            // Print flag name and description
+            try self.stdout.print("--{s}\t{s} [{s}]", .{
+                flag.name,
+                flag.description,
+                @tagName(flag.type),
+            });
+
+            // Print default value
+            switch (flag.type) {
+                .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
+                .Int => try self.stdout.print(" (default: {})", .{flag.default_value.Int}),
+                .String => if (flag.default_value.String.len > 0) {
+                    try self.stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
+                },
+            }
+            try self.stdout.print("\n", .{});
+        }
+    }
+
+    pub fn listPositionalArgs(self: *const Command) !void {
+        if (self.positional_args.items.len == 0) return;
+
+        try self.stdout.print("Arguments:\n", .{});
+
+        var max_width: usize = 0;
+        for (self.positional_args.items) |arg| {
+            const name_len = arg.name.len;
+            if (name_len > max_width) max_width = name_len;
+        }
+
+        for (self.positional_args.items) |arg| {
+            const padding = max_width - arg.name.len;
+            try self.stdout.print("  {s}", .{arg.name});
+            try self.stdout.writeByteNTimes(' ', padding + 4); // Align to column
+            try self.stdout.print("{s}", .{arg.description});
+            if (arg.required) {
+                try self.stdout.print(" (required)", .{});
+            }
+            if (arg.variadic) {
+                try self.stdout.print(" (variadic)", .{});
+            }
+            try self.stdout.print("\n", .{});
+        }
+
+        try self.stdout.print("\n", .{});
+    }
+
+    pub fn printUsageLine(self: *Command) !void {
+        const parents = try self.getParents(self.allocator);
+        defer parents.deinit();
+
+        try self.stdout.print("Usage: ", .{});
+
+        for (parents.items) |p| {
+            try self.stdout.print("{s} ", .{p.options.name});
+        }
+
+        try self.stdout.print("{s} [options]", .{self.options.name});
+
+        for (self.positional_args.items) |arg| {
+            if (arg.required) {
+                try self.stdout.print(" <{s}>", .{arg.name});
+            } else {
+                try self.stdout.print(" [{s}]", .{arg.name});
+            }
+            if (arg.variadic) {
+                try self.stdout.print("...", .{});
             }
         }
     }
@@ -302,26 +365,32 @@ pub const Command = struct {
             if (self.options.usage) |usage| {
                 try self.stdout.print("Usage: {s}\n", .{usage});
             } else {
-                try self.stdout.print("Usage: ", .{});
-                for (parents.items) |p| {
-                    try self.stdout.print("{s} ", .{p.options.name});
-                }
-                try self.stdout.print("{s} [options]\n", .{self.options.name});
+                try self.printUsageLine();
             }
 
             try self.stdout.print("\n", .{});
 
+            if (self.commands_by_name.count() > 0) try self.stdout.print("\n", .{});
             try self.listCommands();
             try self.stdout.print("\n", .{});
 
             try self.listFlags();
             if (self.flags_by_name.count() > 0) try self.stdout.print("\n", .{});
 
-            try self.stdout.print("Run: '", .{});
+            try self.listPositionalArgs();
+
+            const has_subcommands = self.commands_by_name.count() > 0;
+
+            try self.stdout.print("Use \"", .{});
             for (parents.items) |p| {
                 try self.stdout.print("{s} ", .{p.options.name});
             }
-            try self.stdout.print("{s} [command] --help'\n", .{self.options.name});
+            try self.stdout.print("{s}", .{self.options.name});
+
+            if (has_subcommands) {
+                try self.stdout.print(" [command]", .{});
+            }
+            try self.stdout.print(" --help\" for more information.\n", .{});
         }
     }
 
@@ -503,8 +572,38 @@ pub const Command = struct {
     }
 
     fn parsePositionalArgs(self: *Command, args: *std.ArrayList([]const u8)) !void {
-        _ = self;
-        _ = args;
+        const expected = self.positional_args.items;
+
+        var required_count: u8 = 0;
+        for (expected) |value| {
+            if (value.required) required_count += 1;
+        }
+
+        if (args.items.len < required_count) {
+            try self.stderr.print("Missing {d} positional argument(s).\n\nExpected: ", .{required_count});
+
+            var first = true;
+            for (expected) |arg| {
+                if (arg.required) {
+                    if (!first) try self.stderr.print(", ", .{});
+                    try self.stderr.print("{s}", .{arg.name});
+                    first = false;
+                }
+            }
+
+            try self.stderr.print("\n", .{});
+            try self.displayCommandError();
+            std.process.exit(1);
+        }
+
+        if (expected.len > 0) {
+            const last_arg = expected[expected.len - 1];
+            if (!last_arg.variadic and args.items.len > expected.len) {
+                try self.stderr.print("Too many positional arguments. Expected at most {}.\n", .{expected.len});
+                try self.displayCommandError();
+                std.process.exit(1);
+            }
+        }
     }
 
     pub fn findCommand(self: *const Command, name_or_shortcut: []const u8) ?*Command {
@@ -536,13 +635,26 @@ pub const Command = struct {
     /// Traverse the commands to find the last one in the user input
     fn findLeaf(self: *Command, args: *std.ArrayList([]const u8)) !*Command {
         var current = self;
+
         while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
             const name = args.items[0];
             const maybe_next = current.findCommand(name);
-            if (maybe_next == null) break; // Treat remaining args as positional
+
+            if (maybe_next == null) {
+                // Check if the current command expects positional arguments
+                const expects_pos_args = current.positional_args.items.len > 0;
+                if (!expects_pos_args) {
+                    try current.stderr.print("Unknown command: '{s}'\n", .{name});
+                    try current.displayCommandError();
+                    std.process.exit(1);
+                }
+                break;
+            }
+
             _ = try popFront([]const u8, args);
             current = maybe_next.?;
         }
+
         return current;
     }
 
@@ -600,7 +712,7 @@ pub const Command = struct {
         for (parents.items) |p| {
             try self.stderr.print("{s} ", .{p.options.name});
         }
-        try self.stderr.print("{s} [command] --help'\n", .{self.options.name});
+        try self.stderr.print("{s} --help'\n", .{self.options.name});
     }
 };
 

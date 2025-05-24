@@ -1,16 +1,17 @@
-# 📟 zli
+### 📟 zli
 
-A **blazing-fast**, zero-cost CLI framework for Zig — inspired by Cobra (Go) and clap (Rust).
+A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
 Build modular, ergonomic, and high-performance CLIs with ease.
+All batteries included.
 
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.3.1-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.4.0-green)](https://github.com/xcaeser/zli/releases)
 
-> [!TIP]
 > 🧱 Each command is modular and self-contained.
+> inspired by Cobra (Go) and clap (Rust).
 
 ## 📚 Documentation
 
@@ -21,14 +22,15 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Modular commands & subcommands
 - Fast flag parsing (`--flag`, `--flag=value`, shorthand `-abc`)
 - Type-safe support for `bool`, `int`, `string`
-- positional arguments
+- Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
-- Works like Cobra or clap, but in Zig
+- Pretty help output with aligned flags & args
+- Cobra-like usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.3.1.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.4.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -53,7 +55,7 @@ your-app/
 
 - Each command is in its own file
 - You explicitly register subcommands
-- Root is the entry point
+- `root.zig` is the entry point
 
 ## 🧪 Example
 
@@ -67,7 +69,7 @@ pub fn main() !void {
     var root = try cli.build(allocator);
     defer root.deinit();
 
-    try root.execute(.{}); // You can pass any data here try root.execute(.{.data = &my_data});
+    try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
 }
 ```
 
@@ -85,7 +87,6 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
         .description = "Your dev toolkit CLI",
     }, showHelp);
 
-    // try to add in alphabetical order if u have a lot of commands, however, this is not required. they will be sorted automatically
     try root.addCommands(&.{
         try run.register(allocator),
         try version.register(allocator),
@@ -95,9 +96,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
 }
 
 fn showHelp(ctx: zli.CommandContext) !void {
-    try ctx.command.printHelp();
-
-    // try ctx.command.listCommands();
+    try ctx.command.printHelp(true);
 }
 ```
 
@@ -110,7 +109,7 @@ const now_flag = zli.Flag{
     .name = "now",
     .shortcut = "n",
     .description = "Run immediately",
-    .flag_type = .Bool,
+    .type = .Bool,
     .default_value = .{ .Bool = false },
 };
 
@@ -121,22 +120,30 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
     }, run);
 
     try cmd.addFlag(now_flag);
+    try cmd.addPositionalArg(.{
+        .name = "script",
+        .description = "Script to execute",
+        .required = true,
+    });
+    try cmd.addPositionalArg(.{
+        .name = "env",
+        .description = "Environment name",
+        .required = false,
+    });
+
     return cmd;
 }
 
 fn run(ctx: zli.CommandContext) !void {
-    const now = ctx.flag("now", bool); // type-safe flag value ctx.flag("flag_name", bool or int or []const u8)
-    std.debug.print("Running now: {}\n", .{now});
+    const now = ctx.flag("now", bool); // type-safe flag access
 
-    // for (ctx.positional_args) |arg| {
-    //     std.debug.print("Arg is: {s}\n", .{arg});
-    // }
+    const script = ctx.getArg("script") orelse {
+        try ctx.command.stderr.print("Missing script arg\n", .{});
+        return;
+    };
+    const env = ctx.getArg("env") orelse "default";
 
-
-    const pointer_to_data = ctx.getContextData(comptime T); // returns a pointer to the data you passed in main.zig, T can be any type (struct, union, etc.)
-
-    // do something with ctx: ctx.root, ctx.direct_parent, ctx.command ...
-    // do whatever you want here
+    std.debug.print("Running {s} in {s} (now = {})\n", .{ script, env, now });
 }
 ```
 
@@ -165,7 +172,10 @@ fn show(ctx: zli.CommandContext) !void {
 - [x] Type-safe flag values
 - [x] Help/version auto handling
 - [x] Deprecation notices
-- [x] Positional args
+- [x] Positional args (required, optional, variadic)
+- [x] Pretty-aligned help for flags & args
+- [x] Named access: `ctx.getArg("name")`
+- [x] Clean usage output like Cobra
 - [ ] Command aliases
 - [ ] Persistent flags
 
