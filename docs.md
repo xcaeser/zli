@@ -212,7 +212,6 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
         .name = "blitz",
         .description = "A (fictional) dev toolkit CLI.",
         .version = "v1.0.0", // Optional: for auto --version flag or manual display
-        // .execFn = showHelp, // Optional: function to run if no subcommand is given
     },
     showHelp,
     ); // Default execFn if no subcommand is matched
