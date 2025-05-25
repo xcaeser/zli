@@ -8,7 +8,7 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.5.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.5.1-green)](https://github.com/xcaeser/zli/releases)
 
 > 🧱 Each command is modular and self-contained.
 > inspired by Cobra (Go) and clap (Rust).
@@ -30,7 +30,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.5.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.5.1.tar.gz
 ```
 
 Add to your `build.zig`:

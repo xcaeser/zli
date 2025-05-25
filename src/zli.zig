@@ -442,35 +442,31 @@ pub const Command = struct {
     }
 
     // cli run --faas pp --me --op=77 -p -abc xxxx yyyy zzzz
-    fn parseFlags(self: *Command, args: *std.ArrayList([]const u8)) !void {
+    fn parseArgsAndFlags(self: *Command, args: *std.ArrayList([]const u8), out_positionals: *std.ArrayList([]const u8)) !void {
         while (args.items.len > 0) {
             const arg = args.items[0];
 
-            // --long flag
+            // Handle flags (all the existing parseFlags logic)
             if (std.mem.startsWith(u8, arg, "--")) {
                 // --flag=value
                 if (std.mem.indexOf(u8, arg[2..], "=")) |eql_index| {
                     const flag_name = arg[2..][0..eql_index];
                     const value = arg[2 + eql_index + 1 ..];
                     const flag = self.findFlag(flag_name);
-
                     if (flag == null) {
                         try self.stderr.print("Unknown flag: --{s}\n", .{flag_name});
                         try self.displayCommandError();
                         std.process.exit(1);
                     }
-
                     const flag_value = flag.?.safeEvaluate(value) catch {
                         try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                         try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                         try self.displayCommandError();
                         std.process.exit(1);
                     };
-
                     try self.flag_values.put(flag.?.name, flag_value);
-                    _ = try popFront([]const u8, args); // remove --flag=value
+                    _ = try popFront([]const u8, args);
                 }
-
                 // --flag [value] or boolean
                 else {
                     const flag_name = arg[2..];
@@ -480,7 +476,6 @@ pub const Command = struct {
                         try self.displayCommandError();
                         std.process.exit(1);
                     }
-
                     const has_next = args.items.len > 1;
                     const next_value = if (has_next) args.items[1] else null;
 
@@ -488,7 +483,6 @@ pub const Command = struct {
                         if (next_value) |val| {
                             const is_true = std.mem.eql(u8, val, "true");
                             const is_false = std.mem.eql(u8, val, "false");
-
                             if (is_true or is_false) {
                                 try self.flag_values.put(flag.?.name, .{ .Bool = is_true });
                                 _ = try popFront([]const u8, args); // --flag
@@ -497,14 +491,13 @@ pub const Command = struct {
                             }
                         }
                         try self.flag_values.put(flag.?.name, .{ .Bool = true });
-                        _ = try popFront([]const u8, args); // only --flag
+                        _ = try popFront([]const u8, args);
                     } else {
                         if (!has_next) {
                             try self.stderr.print("Missing value for flag --{s}\n", .{flag_name});
                             try self.displayCommandError();
                             std.process.exit(1);
                         }
-
                         const value = args.items[1];
                         const flag_value = flag.?.safeEvaluate(value) catch {
                             try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
@@ -518,11 +511,9 @@ pub const Command = struct {
                     }
                 }
             }
-
             // -abc short flags
             else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1 and !std.mem.eql(u8, arg, "-")) {
                 const shortcuts = arg[1..];
-
                 var j: usize = 0;
                 while (j < shortcuts.len) : (j += 1) {
                     const shortcut = shortcuts[j .. j + 1];
@@ -531,7 +522,6 @@ pub const Command = struct {
                         try self.stderr.print("Unknown flag: -{c}\n", .{shortcuts[j]});
                         std.process.exit(1);
                     }
-
                     if (flag.?.type == .Bool) {
                         try self.flag_values.put(flag.?.name, .{ .Bool = true });
                     } else {
@@ -539,29 +529,27 @@ pub const Command = struct {
                             try self.stderr.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
                             std.process.exit(1);
                         }
-
                         if (args.items.len < 2) {
                             try self.stderr.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
                             std.process.exit(1);
                         }
-
                         const value = args.items[1];
                         const flag_value = flag.?.safeEvaluate(value) catch {
                             try self.stderr.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
                             try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                             std.process.exit(1);
                         };
-
                         try self.flag_values.put(flag.?.name, flag_value);
                         _ = try popFront([]const u8, args); // value
                     }
                 }
-
                 _ = try popFront([]const u8, args); // -abc
             }
-
-            // not a flag
-            else break;
+            // Positional argument
+            else {
+                const val = try popFront([]const u8, args);
+                try out_positionals.append(val);
+            }
         }
     }
 
@@ -658,19 +646,6 @@ pub const Command = struct {
         return current;
     }
 
-    fn parseArgs(self: *Command, args: *std.ArrayList([]const u8), out_positionals: *std.ArrayList([]const u8)) !void {
-        while (args.items.len > 0) {
-            const arg = args.items[0];
-
-            if (std.mem.startsWith(u8, arg, "-")) {
-                try self.parseFlags(args);
-            } else {
-                const val = try popFront([]const u8, args);
-                try out_positionals.append(val);
-            }
-        }
-    }
-
     // Need to make find command, parse flags and parse pos_args execution in parallel
     pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
         var bw = std.io.bufferedWriter(self.stdout);
@@ -698,7 +673,10 @@ pub const Command = struct {
         try cmd.checkDeprecated();
 
         var pos_args = std.ArrayList([]const u8).init(self.allocator);
-        try cmd.parseArgs(&args, &pos_args);
+        defer pos_args.deinit();
+
+        // Single loop instead of nested loops
+        try cmd.parseArgsAndFlags(&args, &pos_args);
         try cmd.parsePositionalArgs(&pos_args);
 
         const root = self;
