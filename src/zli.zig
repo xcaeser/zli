@@ -26,6 +26,7 @@ pub const Flag = struct {
     description: []const u8,
     type: FlagType,
     default_value: FlagValue,
+    hidden: bool = false,
 
     fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
@@ -162,6 +163,16 @@ pub const Command = struct {
             .commands_by_shortcut = std.StringHashMap(*Command).init(allocator),
             .allocator = allocator,
         };
+
+        const helpFlag: Flag = .{
+            .name = "help",
+            .description = "Shows the help for a command",
+            .shortcut = "h",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        };
+
+        try cmd.addFlag(helpFlag);
 
         return cmd;
     }
@@ -446,6 +457,13 @@ pub const Command = struct {
         while (args.items.len > 0) {
             const arg = args.items[0];
 
+            if (args.items.len > 0 and
+                (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")))
+            {
+                try self.printHelp();
+                std.process.exit(0);
+            }
+
             // Handle flags (all the existing parseFlags logic)
             if (std.mem.startsWith(u8, arg, "--")) {
                 // --flag=value
@@ -620,7 +638,7 @@ pub const Command = struct {
         }
     }
 
-    /// Traverse the commands to find the last one in the user input
+    // Traverse the commands to find the last one in the user input
     fn findLeaf(self: *Command, args: *std.ArrayList([]const u8)) !*Command {
         var current = self;
 
@@ -661,21 +679,13 @@ pub const Command = struct {
             try args.append(arg);
         }
 
-        var cmd = try self.findLeaf(&args);
-
-        if (args.items.len > 0 and
-            (std.mem.eql(u8, args.items[0], "--help") or std.mem.eql(u8, args.items[0], "-h")))
-        {
-            try cmd.printHelp();
-            return;
-        }
-
-        try cmd.checkDeprecated();
-
         var pos_args = std.ArrayList([]const u8).init(self.allocator);
         defer pos_args.deinit();
 
-        // Single loop instead of nested loops
+        var cmd = try self.findLeaf(&args);
+
+        try cmd.checkDeprecated();
+
         try cmd.parseArgsAndFlags(&args, &pos_args);
         try cmd.parsePositionalArgs(&pos_args);
 
