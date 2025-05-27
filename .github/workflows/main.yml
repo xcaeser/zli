@@ -1,9 +1,15 @@
 name: ZLI Tests
 on:
   push:
+    paths:
+      - "src/**"
+      - "build.zig"
   pull_request:
     branches:
       - main
+    paths:
+      - "src/**"
+      - "build.zig"
 jobs:
   build:
     runs-on: ubuntu-latest
