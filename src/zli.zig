@@ -54,20 +54,6 @@ pub const PositionalArg = struct {
     variadic: bool = false,
 };
 
-pub const CommandOptions = struct {
-    section_title: []const u8 = "General",
-    name: []const u8,
-    description: []const u8,
-    version: ?std.SemanticVersion = null,
-    commands_title: []const u8 = "Available commands",
-    shortcut: ?[]const u8 = null,
-    short_description: ?[]const u8 = null,
-    help: ?[]const u8 = null,
-    usage: ?[]const u8 = null,
-    deprecated: bool = false,
-    replaced_by: ?[]const u8 = null,
-};
-
 pub const CommandContext = struct {
     root: *const Command,
     direct_parent: *const Command,
@@ -129,6 +115,21 @@ const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 /// common error would error: dependency loop detected if this function is not passed to the init function.
 const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
 
+pub const CommandOptions = struct {
+    section_title: []const u8 = "General",
+    name: []const u8,
+    description: []const u8,
+    version: ?std.SemanticVersion = null,
+    commands_title: []const u8 = "Available commands",
+    shortcut: ?[]const u8 = null,
+    aliases: ?[]const []const u8 = null,
+    short_description: ?[]const u8 = null,
+    help: ?[]const u8 = null,
+    usage: ?[]const u8 = null,
+    deprecated: bool = false,
+    replaced_by: ?[]const u8 = null,
+};
+
 pub const Command = struct {
     options: CommandOptions,
 
@@ -142,6 +143,7 @@ pub const Command = struct {
 
     commands_by_name: std.StringHashMap(*Command),
     commands_by_shortcut: std.StringHashMap(*Command),
+    command_by_aliases: std.StringHashMap(*Command),
 
     parent: ?*Command = null,
     allocator: std.mem.Allocator,
@@ -161,6 +163,7 @@ pub const Command = struct {
             .flag_values = std.StringHashMap(FlagValue).init(allocator),
             .commands_by_name = std.StringHashMap(*Command).init(allocator),
             .commands_by_shortcut = std.StringHashMap(*Command).init(allocator),
+            .command_by_aliases = std.StringHashMap(*Command).init(allocator),
             .allocator = allocator,
         };
 
@@ -191,6 +194,7 @@ pub const Command = struct {
         }
         self.commands_by_name.deinit();
         self.commands_by_shortcut.deinit();
+        self.command_by_aliases.deinit();
         self.allocator.destroy(self);
     }
 
@@ -267,17 +271,6 @@ pub const Command = struct {
             return;
         }
 
-        // I don't believe this is needed as help is always there
-        // if (self.flags_by_name.count() == 1) {
-        //     var it = self.flags_by_name.iterator();
-        //     if (it.next()) |entry| {
-        //         const flag = entry.value_ptr.*;
-        //         if (flag.hidden == true) {
-        //             return;
-        //         }
-        //     }
-        // }
-
         try self.stdout.print("Flags:\n", .{});
         var it = self.flags_by_name.iterator();
         while (it.next()) |entry| {
@@ -337,6 +330,19 @@ pub const Command = struct {
         try self.stdout.print("\n", .{});
     }
 
+    pub fn listAliases(self: *Command) !void {
+        if (self.options.aliases) |aliases| {
+            if (aliases.len == 0) return;
+            try self.stdout.print("Aliases: ", .{});
+            for (aliases, 0..) |alias, i| {
+                try self.stdout.print("{s}", .{alias});
+                if (i < aliases.len - 1) {
+                    try self.stdout.print(", ", .{});
+                }
+            }
+        }
+    }
+
     pub fn printUsageLine(self: *Command) !void {
         const parents = try self.getParents(self.allocator);
         defer parents.deinit();
@@ -390,15 +396,27 @@ pub const Command = struct {
                 try self.printUsageLine();
             }
 
+            if (self.options.aliases) |aliases| {
+                if (aliases.len > 0) {
+                    try self.stdout.print("\n\n", .{});
+                }
+            }
+
+            // Aliases
+            try self.listAliases();
+
+            // Sub commands
             try self.stdout.print("\n", .{});
 
             if (self.commands_by_name.count() > 0) try self.stdout.print("\n", .{});
             try self.listCommands();
             try self.stdout.print("\n", .{});
 
+            // Flags
             try self.listFlags();
             if (self.flags_by_name.count() > 0) try self.stdout.print("\n", .{});
 
+            // Arguments
             try self.listPositionalArgs();
 
             const has_subcommands = self.commands_by_name.count() > 0;
@@ -432,6 +450,11 @@ pub const Command = struct {
     pub fn addCommand(self: *Command, command: *Command) !void {
         command.parent = self;
         try self.commands_by_name.put(command.options.name, command);
+        if (command.options.aliases) |aliases| {
+            for (aliases) |alias| {
+                try self.command_by_aliases.put(alias, command);
+            }
+        }
         if (command.options.shortcut) |shortcut| try self.commands_by_shortcut.put(shortcut, command);
     }
 
@@ -625,6 +648,7 @@ pub const Command = struct {
 
     pub fn findCommand(self: *const Command, name_or_shortcut: []const u8) ?*Command {
         if (self.commands_by_name.get(name_or_shortcut)) |cmd| return cmd;
+        if (self.command_by_aliases.get(name_or_shortcut)) |cmd| return cmd;
         if (self.commands_by_shortcut.get(name_or_shortcut)) |cmd| return cmd;
         return null;
     }
