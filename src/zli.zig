@@ -945,7 +945,7 @@ test "parseFlags with --foo and --bar=5" {
     defer args.deinit();
     try args.append("--foo");
     try args.append("--bar=5");
-    try cmd.parseFlags(&args);
+    try cmd.parseArgsAndFlags(&args, undefined);
     try std.testing.expect(cmd.flag_values.get("foo").?.Bool);
     try std.testing.expect(cmd.flag_values.get("bar").?.Int == 5);
 }
@@ -963,7 +963,7 @@ test "parseFlags short flags grouping and value" {
     defer args.deinit();
     try args.append("-abn");
     try args.append("42");
-    try cmd.parseFlags(&args);
+    try cmd.parseArgsAndFlags(&args, undefined);
     try std.testing.expect(cmd.flag_values.get("a").?.Bool);
     try std.testing.expect(cmd.flag_values.get("b").?.Bool);
     try std.testing.expect(cmd.flag_values.get("n").?.Int == 42);
@@ -1003,6 +1003,126 @@ test "getContextData returns typed data" {
     try std.testing.expect(dp.a == 7);
 }
 
-fn dummyExec(_: CommandContext) !void {
-    return;
+fn dummyExec(_: CommandContext) !void {}
+
+test "Command initialization with help flag" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Testing command",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try std.testing.expect(cmd.findFlag("help") != null);
+    try std.testing.expect(cmd.findFlag("h") != null);
+}
+
+test "Adding and retrieving flags" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, .{
+        .name = "flag-test",
+        .description = "Flag command",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    const flag = Flag{
+        .name = "verbose",
+        .shortcut = "v",
+        .description = "Enable verbose output",
+        .type = .Bool,
+        .default_value = .{ .Bool = false },
+    };
+    try cmd.addFlag(flag);
+
+    try std.testing.expect(cmd.findFlag("verbose") != null);
+    try std.testing.expect(cmd.findFlag("v") != null);
+    try std.testing.expect(!cmd.flag_values.get("verbose").?.Bool);
+}
+
+test "Adding positional arguments" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, .{
+        .name = "pos-test",
+        .description = "Positional test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addPositionalArg(.{
+        .name = "input",
+        .description = "Input file",
+        .required = true,
+    });
+    try std.testing.expect(cmd.positional_args.items.len == 1);
+    try std.testing.expect(std.mem.eql(u8, cmd.positional_args.items[0].name, "input"));
+}
+
+test "Command aliases registration and lookup" {
+    const allocator = std.testing.allocator;
+    var root = try Command.init(allocator, .{
+        .name = "root",
+        .description = "Root command",
+    }, dummyExec);
+    defer root.deinit();
+
+    const aliases = &[_][]const u8{ "alias1", "alias2" };
+    const child = try Command.init(allocator, .{
+        .name = "child",
+        .description = "Child",
+        .aliases = aliases,
+    }, dummyExec);
+    try root.addCommand(child);
+
+    for (aliases) |a| {
+        try std.testing.expect(root.findCommand(a).? == child);
+    }
+}
+
+test "CommandContext: getArg returns expected positional" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, .{
+        .name = "args",
+        .description = "arg cmd",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addPositionalArg(.{
+        .name = "user",
+        .description = "Username",
+        .required = true,
+    });
+
+    const ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &[_][]const u8{"naoufal"},
+    };
+    try std.testing.expect(std.mem.eql(u8, ctx.getArg("user").?, "naoufal"));
+}
+
+test "CommandContext: flag lookup fallback to default" {
+    const allocator = std.testing.allocator;
+    var cmd = try Command.init(allocator, .{
+        .name = "ctx-flags",
+        .description = "ctx",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addFlag(.{
+        .name = "debug",
+        .description = "Enable debug",
+        .shortcut = null,
+        .type = .Bool,
+        .default_value = .{ .Bool = true },
+    });
+
+    const ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &[_][]const u8{},
+    };
+    try std.testing.expect(ctx.flag("debug", bool));
 }
