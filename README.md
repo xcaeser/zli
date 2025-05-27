@@ -96,7 +96,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
 }
 
 fn showHelp(ctx: zli.CommandContext) !void {
-    try ctx.command.printHelp(true);
+    try ctx.command.printHelp();
 }
 ```
 
@@ -161,7 +161,7 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
 }
 
 fn show(ctx: zli.CommandContext) !void {
-    std.debug.print("{}\n", .{ctx.root.options.version});
+    std.debug.print("{?}\n", .{ctx.root.options.version});
 }
 ```
 
