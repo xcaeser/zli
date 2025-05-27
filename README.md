@@ -11,6 +11,7 @@ All batteries included.
 [![Version](https://img.shields.io/badge/ZLI-v3.6.0-green)](https://github.com/xcaeser/zli/releases)
 
 > 🧱 Each command is modular and self-contained.
+>
 > New: command aliases!
 
 ## 📚 Documentation
