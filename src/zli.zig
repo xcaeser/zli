@@ -267,25 +267,36 @@ pub const Command = struct {
             return;
         }
 
+        // I don't believe this is needed as help is always there
+        // if (self.flags_by_name.count() == 1) {
+        //     var it = self.flags_by_name.iterator();
+        //     if (it.next()) |entry| {
+        //         const flag = entry.value_ptr.*;
+        //         if (flag.hidden == true) {
+        //             return;
+        //         }
+        //     }
+        // }
+
         try self.stdout.print("Flags:\n", .{});
         var it = self.flags_by_name.iterator();
         while (it.next()) |entry| {
             const flag = entry.value_ptr.*;
-
+            if (flag.hidden == true) {
+                continue;
+            }
             // Print shortcut if available
             if (flag.shortcut) |shortcut| {
-                try self.stdout.print("  -{s}, ", .{shortcut});
+                try self.stdout.print(" -{s}, ", .{shortcut});
             } else {
-                try self.stdout.print("      ", .{});
+                try self.stdout.print("     ", .{});
             }
-
             // Print flag name and description
             try self.stdout.print("--{s}\t{s} [{s}]", .{
                 flag.name,
                 flag.description,
                 @tagName(flag.type),
             });
-
             // Print default value
             switch (flag.type) {
                 .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
