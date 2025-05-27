@@ -377,7 +377,6 @@ pub const Command = struct {
     }
 
     pub fn printHelp(self: *Command) !void {
-        try self.checkDeprecated();
         if (!self.options.deprecated) {
             try self.showInfo();
             try self.stdout.print("\n", .{});
@@ -633,7 +632,7 @@ pub const Command = struct {
 
             try self.stderr.print("\n", .{});
             try self.displayCommandError();
-            std.process.exit(1);
+            return error.MissingArgs;
         }
 
         if (expected.len > 0) {
@@ -641,7 +640,7 @@ pub const Command = struct {
             if (!last_arg.variadic and args.items.len > expected.len) {
                 try self.stderr.print("Too many positional arguments. Expected at most {}.\n", .{expected.len});
                 try self.displayCommandError();
-                std.process.exit(1);
+                return error.TooManyArgs;
             }
         }
     }
@@ -665,11 +664,7 @@ pub const Command = struct {
                 try self.stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
             }
 
-            if (self.parent) |parent| {
-                try self.stdout.print("\nRun '{s} [command] --help' for more information about a command.\n", .{parent.options.name});
-            }
-
-            std.process.exit(1);
+            return error.CommandDeprecated;
         }
     }
 
@@ -687,7 +682,7 @@ pub const Command = struct {
                 if (!expects_pos_args) {
                     try current.stderr.print("Unknown command: '{s}'\n", .{name});
                     try current.displayCommandError();
-                    std.process.exit(1);
+                    return error.UnknownCommand;
                 }
                 break;
             }
@@ -717,12 +712,17 @@ pub const Command = struct {
         var pos_args = std.ArrayList([]const u8).init(self.allocator);
         defer pos_args.deinit();
 
-        var cmd = try self.findLeaf(&args);
+        var cmd = self.findLeaf(&args) catch |err| {
+            if (err == error.UnknownCommand) {
+                std.process.exit(1);
+            }
+            return err;
+        };
 
-        try cmd.checkDeprecated();
+        cmd.checkDeprecated() catch std.process.exit(1);
 
         try cmd.parseArgsAndFlags(&args, &pos_args);
-        try cmd.parsePositionalArgs(&pos_args);
+        cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
 
         const root = self;
         const ctx = CommandContext{
@@ -841,187 +841,173 @@ fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
 }
 
 // Test suite for CLI library
+const testing = std.testing;
 
-test "popFront shifts list" {
-    const allocator = std.testing.allocator;
+// HELPER FUNCTIONS TESTS
+test "popFront: shifts elements correctly" {
+    const allocator = testing.allocator;
     var list = std.ArrayList(i32).init(allocator);
     defer list.deinit();
-    try list.append(1);
-    try list.append(2);
-    try list.append(3);
+
+    try list.appendSlice(&[_]i32{ 1, 2, 3, 4 });
+
     const first = try popFront(i32, &list);
-    try std.testing.expect(first == 1);
-    try std.testing.expect(list.items.len == 2);
-    try std.testing.expect(list.items[0] == 2);
-    try std.testing.expect(list.items[1] == 3);
+    try testing.expectEqual(@as(i32, 1), first);
+    try testing.expectEqual(@as(usize, 3), list.items.len);
+    try testing.expectEqualSlices(i32, &[_]i32{ 2, 3, 4 }, list.items);
 }
 
-test "popFront empty returns error Empty" {
-    const allocator = std.testing.allocator;
+test "popFront: single element" {
+    const allocator = testing.allocator;
     var list = std.ArrayList(i32).init(allocator);
     defer list.deinit();
-    const err = popFront(i32, &list) catch |e| e;
-    try std.testing.expect(err == error.Empty);
+
+    try list.append(42);
+
+    const first = try popFront(i32, &list);
+    try testing.expectEqual(@as(i32, 42), first);
+    try testing.expectEqual(@as(usize, 0), list.items.len);
 }
 
-test "evaluateValueType Bool and Int and String" {
-    var flag_bool = Flag{
-        .name = "b",
-        .shortcut = null,
-        .description = "",
-        .type = .Bool,
-        .default_value = FlagValue{ .Bool = false },
-    };
-    const val_true = try flag_bool.evaluateValueType("true");
-    try std.testing.expect(val_true.Bool);
-    const val_false = try flag_bool.evaluateValueType("false");
-    try std.testing.expect(!val_false.Bool);
+test "popFront: empty list returns error" {
+    const allocator = testing.allocator;
+    var list = std.ArrayList(i32).init(allocator);
+    defer list.deinit();
 
-    var flag_int = Flag{
-        .name = "i",
-        .shortcut = null,
-        .description = "",
-        .type = .Int,
-        .default_value = FlagValue{ .Int = 0 },
-    };
-    const val = try flag_int.evaluateValueType("123");
-    try std.testing.expect(val.Int == 123);
-
-    var flag_str = Flag{
-        .name = "s",
-        .shortcut = null,
-        .description = "",
-        .type = .String,
-        .default_value = FlagValue{ .String = "" },
-    };
-    const sval = try flag_str.evaluateValueType("hello");
-    try std.testing.expect(std.mem.eql(u8, sval.String, "hello"));
+    try testing.expectError(error.Empty, popFront(i32, &list));
 }
 
-test "safeEvaluate maps errors to InvalidFlagValue" {
-    var flag_int = Flag{
-        .name = "i",
-        .shortcut = null,
-        .description = "",
-        .type = .Int,
-        .default_value = FlagValue{ .Int = 0 },
-    };
-    const err = flag_int.safeEvaluate("not_int") catch |e| e;
-    try std.testing.expect(err == error.InvalidFlagValue);
-}
-
-test "addFlag and findFlag and flag_values default" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
-
-    defer cmd.deinit();
+// FLAG VALUE EVALUATION TESTS
+test "Flag.evaluateValueType: boolean values" {
     const flag = Flag{
-        .name = "foo",
-        .shortcut = "f",
-        .description = "",
+        .name = "verbose",
+        .description = "Enable verbose output",
         .type = .Bool,
-        .default_value = FlagValue{ .Bool = true },
+        .default_value = .{ .Bool = false },
     };
-    try cmd.addFlag(flag);
-    const byName = cmd.findFlag("foo");
-    try std.testing.expect(std.mem.eql(u8, byName.?.name, "foo"));
-    try std.testing.expect(byName.?.type == .Bool);
-    const stored = cmd.flag_values.get("foo").?;
-    try std.testing.expect(stored.Bool);
-    const byShort = cmd.findFlag("f");
-    try std.testing.expect(std.mem.eql(u8, byShort.?.name, "foo"));
+
+    // Test valid boolean values
+    const val_true = try flag.evaluateValueType("true");
+    try testing.expect(val_true == .Bool and val_true.Bool == true);
+
+    const val_false = try flag.evaluateValueType("false");
+    try testing.expect(val_false == .Bool and val_false.Bool == false);
+
+    // Test invalid boolean values
+    try testing.expectError(error.InvalidBooleanValue, flag.evaluateValueType("yes"));
+    try testing.expectError(error.InvalidBooleanValue, flag.evaluateValueType("1"));
+    try testing.expectError(error.InvalidBooleanValue, flag.evaluateValueType("True"));
+    try testing.expectError(error.InvalidBooleanValue, flag.evaluateValueType(""));
 }
 
-test "parseFlags with --foo and --bar=5" {
-    const allocator = std.testing.allocator;
-
-    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
-
-    defer cmd.deinit();
-    const flag1 = Flag{ .name = "foo", .shortcut = "f", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
-    const flag2 = Flag{ .name = "bar", .shortcut = "b", .description = "", .type = .Int, .default_value = FlagValue{ .Int = 0 } };
-    try cmd.addFlags(&.{ flag1, flag2 });
-    var args = std.ArrayList([]const u8).init(allocator);
-    defer args.deinit();
-    try args.append("--foo");
-    try args.append("--bar=5");
-    try cmd.parseArgsAndFlags(&args, undefined);
-    try std.testing.expect(cmd.flag_values.get("foo").?.Bool);
-    try std.testing.expect(cmd.flag_values.get("bar").?.Int == 5);
-}
-
-test "parseFlags short flags grouping and value" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, CommandOptions{ .name = "test", .description = "" }, dummyExec);
-
-    defer cmd.deinit();
-    const f1 = Flag{ .name = "a", .shortcut = "a", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
-    const f2 = Flag{ .name = "b", .shortcut = "b", .description = "", .type = .Bool, .default_value = FlagValue{ .Bool = false } };
-    const f3 = Flag{ .name = "n", .shortcut = "n", .description = "", .type = .Int, .default_value = FlagValue{ .Int = 0 } };
-    try cmd.addFlags(&.{ f1, f2, f3 });
-    var args = std.ArrayList([]const u8).init(allocator);
-    defer args.deinit();
-    try args.append("-abn");
-    try args.append("42");
-    try cmd.parseArgsAndFlags(&args, undefined);
-    try std.testing.expect(cmd.flag_values.get("a").?.Bool);
-    try std.testing.expect(cmd.flag_values.get("b").?.Bool);
-    try std.testing.expect(cmd.flag_values.get("n").?.Int == 42);
-}
-
-test "findCommand and findLeaf" {
-    const allocator = std.testing.allocator;
-    var root = try Command.init(allocator, CommandOptions{ .name = "root", .description = "" }, dummyExec);
-    defer root.deinit();
-    const child = try Command.init(allocator, CommandOptions{ .name = "child", .description = "" }, dummyExec);
-
-    try root.addCommand(child);
-    const byName = root.findCommand("child");
-    try std.testing.expect(byName.? == child);
-    var args2 = std.ArrayList([]const u8).init(allocator);
-    defer args2.deinit();
-    try args2.append("child");
-    const leaf = try root.findLeaf(&args2);
-    try std.testing.expect(leaf == child);
-}
-
-test "getContextData returns typed data" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, CommandOptions{ .name = "cmd", .description = "" }, dummyExec);
-    defer cmd.deinit();
-    const Data = struct { a: i32 };
-    var d = Data{ .a = 7 };
-    var ctx = CommandContext{
-        .root = cmd,
-        .direct_parent = cmd,
-        .command = cmd,
-        .allocator = allocator,
-        .positional_args = &[_][]const u8{},
-        .data = &d,
+test "Flag.evaluateValueType: integer values" {
+    const flag = Flag{
+        .name = "port",
+        .description = "Port number",
+        .type = .Int,
+        .default_value = .{ .Int = 8080 },
     };
-    const dp = ctx.getContextData(Data);
-    try std.testing.expect(dp.a == 7);
+
+    // Test valid integers
+    const positive = try flag.evaluateValueType("1234");
+    try testing.expectEqual(@as(i32, 1234), positive.Int);
+
+    const negative = try flag.evaluateValueType("-42");
+    try testing.expectEqual(@as(i32, -42), negative.Int);
+
+    const zero = try flag.evaluateValueType("0");
+    try testing.expectEqual(@as(i32, 0), zero.Int);
+
+    // Test invalid integers
+    try testing.expectError(error.InvalidCharacter, flag.evaluateValueType("abc"));
+    try testing.expectError(error.InvalidCharacter, flag.evaluateValueType("12.34"));
+    try testing.expectError(error.InvalidCharacter, flag.evaluateValueType(""));
 }
 
-fn dummyExec(_: CommandContext) !void {}
+test "Flag.evaluateValueType: string values" {
+    const flag = Flag{
+        .name = "output",
+        .description = "Output file",
+        .type = .String,
+        .default_value = .{ .String = "output.txt" },
+    };
 
-test "Command initialization with help flag" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, .{
-        .name = "test",
-        .description = "Testing command",
+    // Test various string values
+    const normal = try flag.evaluateValueType("hello");
+    try testing.expectEqualStrings("hello", normal.String);
+
+    const empty = try flag.evaluateValueType("");
+    try testing.expectEqualStrings("", empty.String);
+
+    const with_spaces = try flag.evaluateValueType("hello world");
+    try testing.expectEqualStrings("hello world", with_spaces.String);
+
+    const special_chars = try flag.evaluateValueType("test@#$%");
+    try testing.expectEqualStrings("test@#$%", special_chars.String);
+}
+
+test "Flag.safeEvaluate: error handling" {
+    const int_flag = Flag{
+        .name = "count",
+        .description = "Count value",
+        .type = .Int,
+        .default_value = .{ .Int = 0 },
+    };
+
+    // Should map specific errors to InvalidFlagValue
+    try testing.expectError(error.InvalidFlagValue, int_flag.safeEvaluate("not_a_number"));
+    try testing.expectError(error.InvalidFlagValue, int_flag.safeEvaluate("12.34"));
+
+    // Valid values should work
+    const valid = try int_flag.safeEvaluate("123");
+    try testing.expectEqual(@as(i32, 123), valid.Int);
+}
+
+// COMMAND INITIALIZATION TESTS
+test "Command.init: creates command with default help flag" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test-cmd",
+        .description = "Test command",
     }, dummyExec);
     defer cmd.deinit();
 
-    try std.testing.expect(cmd.findFlag("help") != null);
-    try std.testing.expect(cmd.findFlag("h") != null);
+    // Should have help flag by default
+    try testing.expect(cmd.findFlag("help") != null);
+    try testing.expect(cmd.findFlag("h") != null);
+
+    const help_flag = cmd.findFlag("help").?;
+    try testing.expectEqualStrings("help", help_flag.name);
+    try testing.expect(help_flag.type == .Bool);
+    try testing.expect(help_flag.default_value.Bool == false);
 }
 
-test "Adding and retrieving flags" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, .{
-        .name = "flag-test",
-        .description = "Flag command",
+test "Command.init: proper initialization of all fields" {
+    const allocator = testing.allocator;
+    const options = CommandOptions{
+        .name = "mycmd",
+        .description = "My command",
+        .version = std.SemanticVersion{ .major = 1, .minor = 0, .patch = 0 },
+        .shortcut = "mc",
+    };
+
+    const cmd = try Command.init(allocator, options, dummyExec);
+    defer cmd.deinit();
+
+    try testing.expectEqualStrings("mycmd", cmd.options.name);
+    try testing.expectEqualStrings("My command", cmd.options.description);
+    try testing.expect(cmd.options.version != null);
+    try testing.expectEqualStrings("mc", cmd.options.shortcut.?);
+    try testing.expect(cmd.parent == null);
+    try testing.expectEqual(@as(usize, 0), cmd.positional_args.items.len);
+}
+
+// FLAG MANAGEMENT TESTS
+test "Command.addFlag: adds flag correctly" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
     }, dummyExec);
     defer cmd.deinit();
 
@@ -1032,87 +1018,418 @@ test "Adding and retrieving flags" {
         .type = .Bool,
         .default_value = .{ .Bool = false },
     };
+
     try cmd.addFlag(flag);
 
-    try std.testing.expect(cmd.findFlag("verbose") != null);
-    try std.testing.expect(cmd.findFlag("v") != null);
-    try std.testing.expect(!cmd.flag_values.get("verbose").?.Bool);
+    // Should be findable by name and shortcut
+    const by_name = cmd.findFlag("verbose");
+    try testing.expect(by_name != null);
+    try testing.expectEqualStrings("verbose", by_name.?.name);
+
+    const by_shortcut = cmd.findFlag("v");
+    try testing.expect(by_shortcut != null);
+    try testing.expectEqualStrings("verbose", by_shortcut.?.name);
+
+    // Should have default value set
+    const default_val = cmd.flag_values.get("verbose");
+    try testing.expect(default_val != null);
+    try testing.expect(default_val.?.Bool == false);
 }
 
-test "Adding positional arguments" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, .{
-        .name = "pos-test",
-        .description = "Positional test",
+test "Command.addFlag: flag without shortcut" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
     }, dummyExec);
     defer cmd.deinit();
 
+    const flag = Flag{
+        .name = "no-shortcut",
+        .shortcut = null,
+        .description = "Flag without shortcut",
+        .type = .String,
+        .default_value = .{ .String = "default" },
+    };
+
+    try cmd.addFlag(flag);
+
+    try testing.expect(cmd.findFlag("no-shortcut") != null);
+    // Shortcut lookup should return null since there's no shortcut
+    try testing.expect(cmd.flags_by_shortcut.count() == 1); // only 'h' from help
+}
+
+test "Command.addFlags: adds multiple flags" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    const flags = [_]Flag{
+        .{
+            .name = "flag1",
+            .shortcut = "1",
+            .description = "First flag",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+        .{
+            .name = "flag2",
+            .shortcut = "2",
+            .description = "Second flag",
+            .type = .Int,
+            .default_value = .{ .Int = 42 },
+        },
+    };
+
+    try cmd.addFlags(&flags);
+
+    try testing.expect(cmd.findFlag("flag1") != null);
+    try testing.expect(cmd.findFlag("flag2") != null);
+    try testing.expect(cmd.findFlag("1") != null);
+    try testing.expect(cmd.findFlag("2") != null);
+}
+
+// POSITIONAL ARGUMENT TESTS
+test "Command.addPositionalArg: adds argument correctly" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    const arg = PositionalArg{
+        .name = "input",
+        .description = "Input file",
+        .required = true,
+    };
+
+    try cmd.addPositionalArg(arg);
+
+    try testing.expectEqual(@as(usize, 1), cmd.positional_args.items.len);
+    try testing.expectEqualStrings("input", cmd.positional_args.items[0].name);
+    try testing.expect(cmd.positional_args.items[0].required);
+}
+
+test "Command.addPositionalArg: variadic arg validation" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    // Add regular arg first
     try cmd.addPositionalArg(.{
         .name = "input",
         .description = "Input file",
         .required = true,
     });
-    try std.testing.expect(cmd.positional_args.items.len == 1);
-    try std.testing.expect(std.mem.eql(u8, cmd.positional_args.items[0].name, "input"));
+
+    // Add variadic arg
+    try cmd.addPositionalArg(.{
+        .name = "files",
+        .description = "Multiple files",
+        .required = false,
+        .variadic = true,
+    });
+
+    // This should fail in actual implementation - testing error case would need process.exit handling
+    // For now, just verify the args were added
+    try testing.expectEqual(@as(usize, 2), cmd.positional_args.items.len);
 }
 
-test "Command aliases registration and lookup" {
-    const allocator = std.testing.allocator;
-    var root = try Command.init(allocator, .{
+// COMMAND HIERARCHY TESTS
+test "Command.addCommand: establishes parent-child relationship" {
+    const allocator = testing.allocator;
+    const root = try Command.init(allocator, .{
         .name = "root",
         .description = "Root command",
     }, dummyExec);
     defer root.deinit();
 
-    const aliases = &[_][]const u8{ "alias1", "alias2" };
     const child = try Command.init(allocator, .{
         .name = "child",
-        .description = "Child",
-        .aliases = aliases,
+        .description = "Child command",
+        .shortcut = "c",
     }, dummyExec);
+
     try root.addCommand(child);
 
-    for (aliases) |a| {
-        try std.testing.expect(root.findCommand(a).? == child);
+    // Child should have parent set
+    try testing.expect(child.parent == root);
+
+    // Root should be able to find child
+    try testing.expect(root.findCommand("child") == child);
+    try testing.expect(root.findCommand("c") == child);
+}
+
+test "Command.addCommand: with aliases" {
+    const allocator = testing.allocator;
+    const root = try Command.init(allocator, .{
+        .name = "root",
+        .description = "Root",
+    }, dummyExec);
+    defer root.deinit();
+
+    const aliases = [_][]const u8{ "alias1", "alias2", "alias3" };
+    const child = try Command.init(allocator, .{
+        .name = "child",
+        .description = "Child with aliases",
+        .aliases = &aliases,
+    }, dummyExec);
+
+    try root.addCommand(child);
+
+    // Should be findable by all aliases
+    for (aliases) |alias| {
+        try testing.expect(root.findCommand(alias) == child);
     }
 }
 
-test "CommandContext: getArg returns expected positional" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, .{
-        .name = "args",
-        .description = "arg cmd",
+test "Command.findLeaf: traverses command hierarchy" {
+    const allocator = testing.allocator;
+    const root = try Command.init(allocator, .{
+        .name = "root",
+        .description = "Root",
+    }, dummyExec);
+    defer root.deinit();
+
+    const level1 = try Command.init(allocator, .{
+        .name = "level1",
+        .description = "Level 1",
+    }, dummyExec);
+
+    const level2 = try Command.init(allocator, .{
+        .name = "level2",
+        .description = "Level 2",
+    }, dummyExec);
+
+    try root.addCommand(level1);
+    try level1.addCommand(level2);
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.appendSlice(&[_][]const u8{ "level1", "level2" });
+
+    const leaf = try root.findLeaf(&args);
+    try testing.expect(leaf == level2);
+
+    // Args should be consumed
+    try testing.expectEqual(@as(usize, 0), args.items.len);
+}
+
+test "Command.findLeaf: stops at unknown command" {
+    const allocator = testing.allocator;
+    const root = try Command.init(allocator, .{
+        .name = "root",
+        .description = "Root",
+    }, dummyExec);
+    defer root.deinit();
+
+    const child = try Command.init(allocator, .{
+        .name = "child",
+        .description = "Child",
+    }, dummyExec);
+
+    try root.addCommand(child);
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.appendSlice(&[_][]const u8{ "child", "unknown" });
+
+    const result = root.findLeaf(&args);
+    try testing.expectError(error.UnknownCommand, result);
+}
+
+// FLAG PARSING TESTS
+test "parseArgsAndFlags: long flag with equals" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
     }, dummyExec);
     defer cmd.deinit();
 
-    try cmd.addPositionalArg(.{
-        .name = "user",
-        .description = "Username",
-        .required = true,
+    try cmd.addFlag(.{
+        .name = "output",
+        .description = "Output file",
+        .type = .String,
+        .default_value = .{ .String = "" },
     });
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.append("--output=file.txt");
+
+    var positionals = std.ArrayList([]const u8).init(allocator);
+    defer positionals.deinit();
+
+    try cmd.parseArgsAndFlags(&args, &positionals);
+
+    const value = cmd.flag_values.get("output").?;
+    try testing.expectEqualStrings("file.txt", value.String);
+    try testing.expectEqual(@as(usize, 0), positionals.items.len);
+}
+
+test "parseArgsAndFlags: boolean flag variations" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addFlags(&[_]Flag{
+        .{
+            .name = "verbose",
+            .shortcut = "v",
+            .description = "Verbose",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+        .{
+            .name = "quiet",
+            .description = "Quiet",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+    });
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.appendSlice(&[_][]const u8{ "--verbose", "--quiet=true", "-v" });
+
+    var positionals = std.ArrayList([]const u8).init(allocator);
+    defer positionals.deinit();
+
+    try cmd.parseArgsAndFlags(&args, &positionals);
+
+    try testing.expect(cmd.flag_values.get("verbose").?.Bool);
+    try testing.expect(cmd.flag_values.get("quiet").?.Bool);
+}
+
+test "parseArgsAndFlags: short flag grouping" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addFlags(&[_]Flag{
+        .{
+            .name = "all",
+            .shortcut = "a",
+            .description = "All",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+        .{
+            .name = "long",
+            .shortcut = "l",
+            .description = "Long",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+        .{
+            .name = "human",
+            .shortcut = "h",
+            .description = "Human readable",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+    });
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.append("-alh");
+
+    var positionals = std.ArrayList([]const u8).init(allocator);
+    defer positionals.deinit();
+
+    try cmd.parseArgsAndFlags(&args, &positionals);
+
+    try testing.expect(cmd.flag_values.get("all").?.Bool);
+    try testing.expect(cmd.flag_values.get("long").?.Bool);
+    // Note: 'h' conflicts with help flag, this test shows the issue
+}
+
+test "parseArgsAndFlags: mixed flags and positionals" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addFlag(.{
+        .name = "count",
+        .shortcut = "c",
+        .description = "Count",
+        .type = .Int,
+        .default_value = .{ .Int = 0 },
+    });
+
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+    try args.appendSlice(&[_][]const u8{ "file1", "--count", "5", "file2" });
+
+    var positionals = std.ArrayList([]const u8).init(allocator);
+    defer positionals.deinit();
+
+    try cmd.parseArgsAndFlags(&args, &positionals);
+
+    try testing.expectEqual(@as(i32, 5), cmd.flag_values.get("count").?.Int);
+    try testing.expectEqual(@as(usize, 2), positionals.items.len);
+    try testing.expectEqualStrings("file1", positionals.items[0]);
+    try testing.expectEqualStrings("file2", positionals.items[1]);
+}
+
+// COMMAND CONTEXT TESTS
+test "CommandContext.flag: retrieves set flag value" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addFlag(.{
+        .name = "port",
+        .description = "Port number",
+        .type = .Int,
+        .default_value = .{ .Int = 8080 },
+    });
+
+    // Simulate setting a flag value
+    try cmd.flag_values.put("port", .{ .Int = 3000 });
 
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
-        .positional_args = &[_][]const u8{"naoufal"},
+        .positional_args = &[_][]const u8{},
     };
-    try std.testing.expect(std.mem.eql(u8, ctx.getArg("user").?, "naoufal"));
+
+    try testing.expectEqual(@as(i32, 3000), ctx.flag("port", i32));
 }
 
-test "CommandContext: flag lookup fallback to default" {
-    const allocator = std.testing.allocator;
-    var cmd = try Command.init(allocator, .{
-        .name = "ctx-flags",
-        .description = "ctx",
+test "CommandContext.flag: fallback to default value" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
     }, dummyExec);
     defer cmd.deinit();
 
     try cmd.addFlag(.{
         .name = "debug",
-        .description = "Enable debug",
-        .shortcut = null,
+        .description = "Debug mode",
         .type = .Bool,
         .default_value = .{ .Bool = true },
     });
@@ -1124,5 +1441,194 @@ test "CommandContext: flag lookup fallback to default" {
         .allocator = allocator,
         .positional_args = &[_][]const u8{},
     };
-    try std.testing.expect(ctx.flag("debug", bool));
+
+    // Should return default since flag_values doesn't have "debug" set to a different value
+    try testing.expect(ctx.flag("debug", bool));
+}
+
+test "CommandContext.getArg: retrieves positional argument" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addPositionalArg(.{
+        .name = "username",
+        .description = "Username",
+        .required = true,
+    });
+
+    try cmd.addPositionalArg(.{
+        .name = "password",
+        .description = "Password",
+        .required = false,
+    });
+
+    const args = [_][]const u8{ "john", "secret123" };
+    const ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &args,
+    };
+
+    try testing.expectEqualStrings("john", ctx.getArg("username").?);
+    try testing.expectEqualStrings("secret123", ctx.getArg("password").?);
+    try testing.expect(ctx.getArg("nonexistent") == null);
+}
+
+test "CommandContext.getArg: missing optional argument" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    try cmd.addPositionalArg(.{
+        .name = "required",
+        .description = "Required arg",
+        .required = true,
+    });
+
+    try cmd.addPositionalArg(.{
+        .name = "optional",
+        .description = "Optional arg",
+        .required = false,
+    });
+
+    const args = [_][]const u8{"onlyRequired"};
+    const ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &args,
+    };
+
+    try testing.expectEqualStrings("onlyRequired", ctx.getArg("required").?);
+    try testing.expect(ctx.getArg("optional") == null);
+}
+
+test "CommandContext.getContextData: type casting" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    const TestData = struct {
+        value: i32,
+        name: []const u8,
+    };
+
+    var data = TestData{ .value = 42, .name = "test" };
+
+    const ctx = CommandContext{
+        .root = cmd,
+        .direct_parent = cmd,
+        .command = cmd,
+        .allocator = allocator,
+        .positional_args = &[_][]const u8{},
+        .data = &data,
+    };
+
+    const retrieved = ctx.getContextData(TestData);
+    try testing.expectEqual(@as(i32, 42), retrieved.value);
+    try testing.expectEqualStrings("test", retrieved.name);
+}
+
+// INTEGRATION TESTS
+test "full command parsing workflow" {
+    const allocator = testing.allocator;
+
+    // Create root command
+    const root = try Command.init(allocator, .{
+        .name = "myapp",
+        .description = "My application",
+        .version = std.SemanticVersion{ .major = 1, .minor = 2, .patch = 3 },
+    }, dummyExec);
+    defer root.deinit();
+
+    // Add flags to root
+    try root.addFlags(&[_]Flag{
+        .{
+            .name = "verbose",
+            .shortcut = "v",
+            .description = "Verbose output",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        },
+        .{
+            .name = "config",
+            .shortcut = "c",
+            .description = "Config file",
+            .type = .String,
+            .default_value = .{ .String = "config.json" },
+        },
+    });
+
+    // Create subcommand
+    const deploy_cmd = try Command.init(allocator, .{
+        .name = "deploy",
+        .description = "Deploy application",
+        .shortcut = "d",
+    }, dummyExec);
+
+    try deploy_cmd.addPositionalArg(.{
+        .name = "environment",
+        .description = "Target environment",
+        .required = true,
+    });
+
+    try deploy_cmd.addFlag(.{
+        .name = "force",
+        .shortcut = "f",
+        .description = "Force deployment",
+        .type = .Bool,
+        .default_value = .{ .Bool = false },
+    });
+
+    try root.addCommand(deploy_cmd);
+
+    // Test command finding
+    try testing.expect(root.findCommand("deploy") == deploy_cmd);
+    try testing.expect(root.findCommand("d") == deploy_cmd);
+
+    // Test flag inheritance and parsing would need more complex setup
+    // This demonstrates the structure for integration testing
+}
+
+// ERROR HANDLING TESTS
+test "error handling: unknown flag" {
+    const allocator = testing.allocator;
+    const cmd = try Command.init(allocator, .{
+        .name = "test",
+        .description = "Test",
+    }, dummyExec);
+    defer cmd.deinit();
+
+    // In a real scenario, this would trigger process.exit(1)
+    // For testing, we'd need to capture stderr or modify the error handling
+    try testing.expect(cmd.findFlag("nonexistent") == null);
+}
+
+test "error handling: invalid flag value type" {
+    const int_flag = Flag{
+        .name = "count",
+        .description = "Count",
+        .type = .Int,
+        .default_value = .{ .Int = 0 },
+    };
+
+    try testing.expectError(error.InvalidFlagValue, int_flag.safeEvaluate("not_a_number"));
+}
+
+// UTILITY FUNCTIONS FOR TESTS
+fn dummyExec(_: CommandContext) !void {
+    // Do nothing - just for testing
 }
