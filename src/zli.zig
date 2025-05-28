@@ -272,34 +272,20 @@ pub const Command = struct {
         }
 
         try self.stdout.print("Flags:\n", .{});
+
+        // Collect all flags into a list for processing
+        var flags = std.ArrayList(Flag).init(self.allocator);
+        defer flags.deinit();
+
         var it = self.flags_by_name.iterator();
         while (it.next()) |entry| {
             const flag = entry.value_ptr.*;
-            if (flag.hidden == true) {
-                continue;
+            if (!flag.hidden) {
+                try flags.append(flag);
             }
-            // Print shortcut if available
-            if (flag.shortcut) |shortcut| {
-                try self.stdout.print(" -{s}, ", .{shortcut});
-            } else {
-                try self.stdout.print("     ", .{});
-            }
-            // Print flag name and description
-            try self.stdout.print("--{s}\t{s} [{s}]", .{
-                flag.name,
-                flag.description,
-                @tagName(flag.type),
-            });
-            // Print default value
-            switch (flag.type) {
-                .Bool => try self.stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
-                .Int => try self.stdout.print(" (default: {})", .{flag.default_value.Int}),
-                .String => if (flag.default_value.String.len > 0) {
-                    try self.stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
-                },
-            }
-            try self.stdout.print("\n", .{});
         }
+
+        try printAlignedFlags(flags.items);
     }
 
     pub fn listPositionalArgs(self: *const Command) !void {
@@ -792,39 +778,68 @@ fn printAlignedCommands(commands: []*Command) !void {
     }
 }
 
-// Print a human-friendly error message for flag errors
-fn printError(err: anyerror, flag_name: []const u8, value: ?[]const u8) !void {
-    const stderr = std.io.getStdErr().writer();
+fn printAlignedFlags(flags: []const Flag) !void {
+    if (flags.len == 0) return;
 
-    switch (err) {
-        error.MissingValueForFlag => {
-            try stderr.print("{s}Error:{s} Missing value for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
-        },
-        error.InvalidBooleanValue => {
-            if (value) |val| {
-                try stderr.print("{s}Error:{s} Invalid boolean value '{s}' for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, val, flag_name });
-                try stderr.print("Boolean flags accept only 'true' or 'false' values\n", .{});
-            } else {
-                try stderr.print("{s}Error:{s} Invalid boolean value for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
-            }
-        },
-        error.InvalidIntegerValue => {
-            if (value) |val| {
-                try stderr.print("{s}Error:{s} Invalid integer value '{s}' for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, val, flag_name });
-                try stderr.print("Integer flags require a numeric value\n", .{});
-            } else {
-                try stderr.print("{s}Error:{s} Invalid integer value for flag '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
-            }
-        },
-        error.UnknownFlag => {
-            try stderr.print("{s}Error:{s} Unknown flag: '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
-        },
-        error.InvalidFlagCombination => {
-            try stderr.print("{s}Error:{s} Invalid flag combination involving '--{s}'\n", .{ styles.BOLD, styles.RESET, flag_name });
-        },
-        else => {
-            try stderr.print("{s}Error:{s} {s} with flag '--{s}'\n", .{ styles.BOLD, styles.RESET, @errorName(err), flag_name });
-        },
+    // Get stdout from the first flag's command context
+    const stdout = std.io.getStdOut().writer();
+
+    // Calculate maximum width for the flag name + shortcut part
+    var max_width: usize = 0;
+    for (flags) |flag| {
+        var flag_width: usize = 0;
+
+        // Add shortcut width if present: " -x, "
+        if (flag.shortcut) |shortcut| {
+            flag_width += 1 + shortcut.len + 2; // " -" + shortcut + ", "
+        } else {
+            flag_width += 5; // "     " (5 spaces for alignment)
+        }
+
+        // Add flag name width: "--flagname"
+        flag_width += 2 + flag.name.len; // "--" + name
+
+        if (flag_width > max_width) {
+            max_width = flag_width;
+        }
+    }
+
+    // Print each flag with proper alignment
+    for (flags) |flag| {
+        var current_width: usize = 0;
+
+        // Print shortcut if available
+        if (flag.shortcut) |shortcut| {
+            try stdout.print(" -{s}, ", .{shortcut});
+            current_width += 1 + shortcut.len + 2;
+        } else {
+            try stdout.print("     ", .{});
+            current_width += 5;
+        }
+
+        // Print flag name
+        try stdout.print("--{s}", .{flag.name});
+        current_width += 2 + flag.name.len;
+
+        // Calculate and add padding
+        const padding = max_width - current_width;
+        try stdout.writeByteNTimes(' ', padding + 4); // 4-space gap
+
+        // Print description and type
+        try stdout.print("{s} [{s}]", .{
+            flag.description,
+            @tagName(flag.type),
+        });
+
+        // Print default value
+        switch (flag.type) {
+            .Bool => try stdout.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
+            .Int => try stdout.print(" (default: {})", .{flag.default_value.Int}),
+            .String => if (flag.default_value.String.len > 0) {
+                try stdout.print(" (default: \"{s}\")", .{flag.default_value.String});
+            },
+        }
+        try stdout.print("\n", .{});
     }
 }
 
