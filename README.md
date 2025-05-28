@@ -178,7 +178,7 @@ fn show(ctx: zli.CommandContext) !void {
 - [x] Pretty-aligned help for flags & args
 - [x] Named access: `ctx.getArg("name")`
 - [x] Clean usage output like Cobra
-- [x ] Command aliases
+- [x] Command aliases
 - [ ] Persistent flags
 
 ## 📝 License
