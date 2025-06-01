@@ -146,7 +146,16 @@ fn run(ctx: zli.CommandContext) !void {
     const env = ctx.getArg("env") orelse "default";
 
     std.debug.print("Running {s} in {s} (now = {})\n", .{ script, env, now });
-}
+
+    // You can also get other commands by name:
+    // if (ctx.root.findCommand("create")) |create_cmd| {
+    //    try create_cmd.printUsageLine();
+    // }
+
+    // if you passed data to your root command, you can access it here:
+    // const object = ctx.getContextData(type_of_your_data); // can be struct, []const u8, etc., object is a pointer.
+
+};
 ```
 
 ```zig
