@@ -55,8 +55,8 @@ pub const PositionalArg = struct {
 };
 
 pub const CommandContext = struct {
-    root: *const Command,
-    direct_parent: *const Command,
+    root: *Command,
+    direct_parent: *Command,
     command: *Command,
     allocator: std.mem.Allocator,
     positional_args: []const []const u8,
