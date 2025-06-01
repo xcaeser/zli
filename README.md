@@ -179,16 +179,16 @@ fn show(ctx: zli.CommandContext) !void {
 ## ✅ Features Checklist
 
 - [x] Commands & subcommands
+- [x] Command aliases
 - [x] Flags & shorthands
 - [x] Type-safe flag values
-- [x] Help/version auto handling
-- [x] Deprecation notices
 - [x] Positional args (required, optional, variadic)
-- [x] Pretty-aligned help for flags & args
 - [x] Named access: `ctx.getArg("name")`
 - [x] Context data
+- [x] Help/version auto handling
+- [x] Deprecation notices
+- [x] Pretty-aligned help for flags & args
 - [x] Clean usage output like Cobra
-- [x] Command aliases
 - [ ] Persistent flags
 
 ## 📝 License
