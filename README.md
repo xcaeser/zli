@@ -11,9 +11,8 @@ All batteries included.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 [![Version](https://img.shields.io/badge/ZLI-v3.7.0-green)](https://github.com/xcaeser/zli/releases)
 
+> [!TIP]
 > 🧱 Each command is modular and self-contained.
->
-> New: Spinners! 🌀
 
 ## 📚 Documentation
 
@@ -27,7 +26,8 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Cobra-like usage hints, context-aware
+- Spinners (new in v3.7.0)
+- Usage hints, context-aware
 
 ## 📦 Installation
 
