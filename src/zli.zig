@@ -1,25 +1,26 @@
 const std = @import("std");
+const Spinner = @import("lib/spin.zig");
+pub const SpinnerStyles = Spinner.SpinnerStyles;
 const builtin = @import("lib/builtin.zig");
-const styles = builtin.styles;
+pub const styles = builtin.styles;
 
-const Writer = std.io.GenericWriter(
-    std.fs.File,
-    std.fs.File.WriteError,
-    std.fs.File.write,
-);
+const Writer = @TypeOf(std.io.getStdOut().writer());
 
+/// FlagType represents the type of a flag, can be a boolean, integer, or string.
 pub const FlagType = enum {
     Bool,
     Int,
     String,
 };
 
+/// FlagValue represents the value of a flag, can be a boolean, integer, or string.
 pub const FlagValue = union(FlagType) {
     Bool: bool,
     Int: i32,
     String: []const u8,
 };
 
+/// Flag represents a flag for a command, example: "--verbose". Can be used such as "--verbose true" or "--verbose=22", or just "--verbose".
 pub const Flag = struct {
     name: []const u8,
     shortcut: ?[]const u8 = null,
@@ -47,6 +48,7 @@ pub const Flag = struct {
     }
 };
 
+/// PositionalArg represents a positional argument for a command, example:"cli open file.txt".
 pub const PositionalArg = struct {
     name: []const u8,
     description: []const u8,
@@ -54,12 +56,14 @@ pub const PositionalArg = struct {
     variadic: bool = false,
 };
 
+/// CommandContext represents the context of a command execution. Powerful!
 pub const CommandContext = struct {
     root: *Command,
     direct_parent: *Command,
     command: *Command,
     allocator: std.mem.Allocator,
     positional_args: []const []const u8,
+    spinner: *Spinner,
     data: ?*anyopaque = null,
 
     // TODO: fix panic: integer cast truncated bits - later im tired
@@ -109,12 +113,14 @@ pub const CommandContext = struct {
     }
 };
 
+/// ExecFn is the type of function that is executed when the command is executed.
 const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 
 /// This is needed to fool the compiler that we are not doing dependency loop
 /// common error would error: dependency loop detected if this function is not passed to the init function.
 const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
 
+/// CommandOptions represents the metadata for a command, such as the name, description, version, and more.
 pub const CommandOptions = struct {
     section_title: []const u8 = "General",
     name: []const u8,
@@ -130,6 +136,11 @@ pub const CommandOptions = struct {
     replaced_by: ?[]const u8 = null,
 };
 
+/// Represents a single command in the Command Line Interface (CLI),
+/// such as "run", "version", or any other user-invoked operation.
+/// Each command encapsulates specific functionality or behavior
+/// that the CLI can execute.
+/// Command represents a single command in the CLI, such as "run" or "version".
 pub const Command = struct {
     options: CommandOptions,
 
@@ -147,14 +158,12 @@ pub const Command = struct {
 
     parent: ?*Command = null,
     allocator: std.mem.Allocator,
-    stdout: Writer,
-    stderr: Writer,
+    stdout: Writer = std.io.getStdOut().writer(),
+    stderr: Writer = std.io.getStdErr().writer(),
 
     pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
         const cmd = try allocator.create(Command);
         cmd.* = Command{
-            .stdout = std.io.getStdOut().writer(),
-            .stderr = std.io.getStdErr().writer(),
             .options = options,
             .positional_args = std.ArrayList(PositionalArg).init(allocator),
             .execFn = execFn,
@@ -710,6 +719,9 @@ pub const Command = struct {
         try cmd.parseArgsAndFlags(&args, &pos_args);
         cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
 
+        const spinner = try Spinner.init(cmd.allocator, .{});
+        defer spinner.deinit(); // Ensure it's always deinitialized
+
         const root = self;
         const ctx = CommandContext{
             .root = root,
@@ -717,6 +729,7 @@ pub const Command = struct {
             .command = cmd,
             .allocator = cmd.allocator,
             .positional_args = pos_args.items,
+            .spinner = spinner,
             .data = context.data,
         };
 
@@ -737,6 +750,7 @@ pub const Command = struct {
 
 // HELPER FUNCTIONS
 
+/// Prints a list of commands aligned to the maximum width of the commands.
 fn printAlignedCommands(commands: []*Command) !void {
     // Step 1: determine the maximum width of name + shortcut
     var max_width: usize = 0;
@@ -778,6 +792,7 @@ fn printAlignedCommands(commands: []*Command) !void {
     }
 }
 
+/// Prints a list of flags aligned to the maximum width of the flags.
 fn printAlignedFlags(flags: []const Flag) !void {
     if (flags.len == 0) return;
 
@@ -844,15 +859,10 @@ fn printAlignedFlags(flags: []const Flag) !void {
 }
 
 /// Pop the first element from the list and shift the rest
+// A more efficient popFront
 fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
     if (list.items.len == 0) return error.Empty;
-    const first = list.items[0];
-    // Shift remaining elements
-    for (list.items[1..], 0..) |item, i| {
-        list.items[i] = item;
-    }
-    _ = list.pop(); // remove the last (now duplicate) element
-    return first;
+    return list.orderedRemove(0);
 }
 
 // Test suite for CLI library

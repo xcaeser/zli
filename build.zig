@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
     // Optional: expose module if reused
     _ = b.addModule("zli", .{
         .root_source_file = b.path("src/zli.zig"),
+        .single_threaded = false,
     });
 
     // Test runner
