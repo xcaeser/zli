@@ -106,10 +106,10 @@ Positional arguments are values passed to a command after its name and flags, id
 1.  Fetch `zli` as a dependency using Zig's package manager:
 
     ```sh
-    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.tar.gz
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.0.tar.gz
     ```
 
-    (Replace `v3.7` with the desired version). This adds the dependency to your `build.zig.zon`.
+    (Replace `v3.7.0` with the desired version). This adds the dependency to your `build.zig.zon`.
 
 2.  Add `zli` to your executable in `build.zig`:
 
