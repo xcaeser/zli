@@ -720,7 +720,7 @@ pub const Command = struct {
         cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
 
         const spinner = try Spinner.init(cmd.allocator, .{});
-        defer spinner.deinit(); // Ensure it's always deinitialized
+        defer spinner.deinit();
 
         const root = self;
         const ctx = CommandContext{
@@ -1433,11 +1433,15 @@ test "CommandContext.flag: retrieves set flag value" {
     // Simulate setting a flag value
     try cmd.flag_values.put("port", .{ .Int = 3000 });
 
+    const spinner = try Spinner.init(cmd.allocator, .{});
+    defer spinner.deinit();
+
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
+        .spinner = spinner,
         .positional_args = &[_][]const u8{},
     };
 
@@ -1459,11 +1463,15 @@ test "CommandContext.flag: fallback to default value" {
         .default_value = .{ .Bool = true },
     });
 
+    const spinner = try Spinner.init(cmd.allocator, .{});
+    defer spinner.deinit();
+
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
+        .spinner = spinner,
         .positional_args = &[_][]const u8{},
     };
 
@@ -1492,11 +1500,14 @@ test "CommandContext.getArg: retrieves positional argument" {
     });
 
     const args = [_][]const u8{ "john", "secret123" };
+    const spinner = try Spinner.init(cmd.allocator, .{});
+    defer spinner.deinit();
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
+        .spinner = spinner,
         .positional_args = &args,
     };
 
@@ -1526,11 +1537,16 @@ test "CommandContext.getArg: missing optional argument" {
     });
 
     const args = [_][]const u8{"onlyRequired"};
+
+    const spinner = try Spinner.init(cmd.allocator, .{});
+    defer spinner.deinit();
+
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
+        .spinner = spinner,
         .positional_args = &args,
     };
 
@@ -1553,11 +1569,15 @@ test "CommandContext.getContextData: type casting" {
 
     var data = TestData{ .value = 42, .name = "test" };
 
+    const spinner = try Spinner.init(cmd.allocator, .{});
+    defer spinner.deinit();
+
     const ctx = CommandContext{
         .root = cmd,
         .direct_parent = cmd,
         .command = cmd,
         .allocator = allocator,
+        .spinner = spinner,
         .positional_args = &[_][]const u8{},
         .data = &data,
     };
