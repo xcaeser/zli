@@ -42,6 +42,7 @@ Inspired by giants like Cobra (Go) and clap (Rust), `zli` focuses on modularity,
     - [`zli.CommandContext`](#zlicommandcontext)
     - [`zli.Flag`](#zliflag)
     - [`zli.PositionalArg`](#zlipositionalarg)
+  - [`zli.Spinner`](#zlispinner)
   - [🤝 Contributing](#-contributing)
   - [📜 License](#-license)
 
@@ -105,10 +106,10 @@ Positional arguments are values passed to a command after its name and flags, id
 1.  Fetch `zli` as a dependency using Zig's package manager:
 
     ```sh
-    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.6.3.tar.gz
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.tar.gz
     ```
 
-    (Replace `v3.6.3` with the desired version). This adds the dependency to your `build.zig.zon`.
+    (Replace `v3.7` with the desired version). This adds the dependency to your `build.zig.zon`.
 
 2.  Add `zli` to your executable in `build.zig`:
 
@@ -688,6 +689,66 @@ Definition for a positional argument.
 - `.description: ?[]const u8 = null`
 - `.required: bool = false`
 - `.variadic: bool = false`
+
+## `zli.Spinner`
+
+A powerful and customizable CLI spinner.
+
+It is accessible via `ctx.spinner` and can be used in any command's `execFn`.
+
+here's an example of how it works:
+
+```zig
+
+const std = @import("std");
+const Spinner = @import("spinner.zig").Spinner;
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+
+    // const spinner = try Spinner.init(allocator, .{}); // you don't have to do this if you're using zli. It is initialized automatically for you.
+    // defer spinner.deinit();
+
+    try spinner.start("Step 1: Initializing the system...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // This updates the text of the current step
+    try spinner.updateText("Step 1: System initialization is taking a while...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // This completes Step 1 and starts a new step (Step 2)
+    try spinner.nextStep("Step 2: Downloading resources...", .{});
+    std.time.sleep(1 * std.time.ns_per_s);
+
+    // Add a log line. It will appear above the spinner and stay there.
+    try spinner.addLine("Downloaded 'resource_a.zip'", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+    try spinner.addLine("Downloaded 'resource_b.zip'", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // Complete Step 2 and start Step 3
+    try spinner.nextStep("Step 3: Compiling assets...", .{});
+    std.time.sleep(3 * std.time.ns_per_s);
+
+    // Finish the entire process with a success message
+    try spinner.succeed("All steps completed successfully!", .{});
+
+    std.debug.print("\n--- Starting another example (failure case) ---\n\n", .{});
+
+    const spinner2 = try Spinner.init(allocator, .{ .frames = Spinner.SpinnerStyles.line });
+    defer spinner2.deinit();
+
+    try spinner2.start("Task 1: Connecting to server...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    try spinner2.nextStep("Task 2: Authenticating...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // The whole process fails at this step
+    try spinner2.fail("Authentication failed: Invalid credentials.", .{});
+}
+
+```
 
 ## 🤝 Contributing
 

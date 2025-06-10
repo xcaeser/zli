@@ -9,11 +9,11 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.6.3-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v3.7-green)](https://github.com/xcaeser/zli/releases)
 
 > 🧱 Each command is modular and self-contained.
 >
-> New: command aliases!
+> New: Spinners! 🌀
 
 ## 📚 Documentation
 
@@ -32,7 +32,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.6.3.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -176,6 +176,35 @@ fn show(ctx: zli.CommandContext) !void {
 }
 ```
 
+### Spinners example
+
+```zig
+const std = @import("std");
+const zli = @import("zli");
+
+pub fn run(ctx: zli.CommandContext) !void {
+    // Step 1: Start the first task.
+    try ctx.spinner.start(.{}, "Connecting to vault...", .{});
+    doSomething();
+    try ctx.spinner.updateText("Step 2: Authentication is taking a moment...", .{});
+    doSomething();
+
+    // Step 2: Mark Step 1 as complete and start the next task.
+    const key = ctx.getArg("key") orelse "b";
+    try ctx.spinner.nextStep("Retrieving key '{s}'...", .{key});
+    doSomething();
+
+    // Step 3: Mark Step 2 as complete and start the final task.
+    try ctx.spinner.nextStep("Decrypting value...", .{});
+    const value = try zv.getFromVault(key);
+    const fl = ctx.flag("now", bool);
+    doSomething();
+
+    // Step 4: Mark the final task as successful and stop.
+    try ctx.spinner.succeed("Success! Found value: {s} (flag: {any})", .{ value, fl });
+}
+
+
 ## ✅ Features Checklist
 
 - [x] Commands & subcommands
@@ -189,8 +218,10 @@ fn show(ctx: zli.CommandContext) !void {
 - [x] Deprecation notices
 - [x] Pretty-aligned help for flags & args
 - [x] Clean usage output like Cobra
+- [x] Spinners and loading state (very powerful)
 - [ ] Persistent flags
 
 ## 📝 License
 
 MIT. See [LICENSE](LICENSE). Contributions welcome.
+```
