@@ -1,30 +1,26 @@
 const std = @import("std");
+const Spinner = @import("lib/spin.zig");
+pub const SpinnerStyles = Spinner.SpinnerStyles;
 const builtin = @import("lib/builtin.zig");
 pub const styles = builtin.styles;
 
-const Writer = std.io.GenericWriter(
-    std.fs.File,
-    std.fs.File.WriteError,
-    std.fs.File.write,
-);
+const Writer = @TypeOf(std.io.getStdOut().writer());
 
-/// Represents the type of a flag, which can be a boolean, integer, or string.
+/// FlagType represents the type of a flag, can be a boolean, integer, or string.
 pub const FlagType = enum {
     Bool,
     Int,
     String,
 };
 
-/// Represents the value of a flag, which can be a boolean, integer, or string.
-/// The type of the value is determined by the associated `FlagType`.
+/// FlagValue represents the value of a flag, can be a boolean, integer, or string.
 pub const FlagValue = union(FlagType) {
     Bool: bool,
     Int: i32,
     String: []const u8,
 };
 
-/// Represents a command-line flag, such as `--verbose` or `-v`.
-/// Flags can have a name, an optional shortcut, a description, a type, a default value, and visibility settings.
+/// Flag represents a flag for a command, example: "--verbose". Can be used such as "--verbose true" or "--verbose=22", or just "--verbose".
 pub const Flag = struct {
     name: []const u8,
     shortcut: ?[]const u8 = null,
@@ -33,8 +29,6 @@ pub const Flag = struct {
     default_value: FlagValue,
     hidden: bool = false,
 
-    /// Evaluates the given value against the flag's type and returns the corresponding `FlagValue`.
-    /// Returns an error if the value is invalid for the flag's type.
     fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
             .Bool => {
@@ -47,7 +41,6 @@ pub const Flag = struct {
         };
     }
 
-    /// Safely evaluates the given value against the flag's type, mapping any errors to `InvalidFlagValue`.
     fn safeEvaluate(self: *const Flag, value: []const u8) !FlagValue {
         return self.evaluateValueType(value) catch {
             return error.InvalidFlagValue;
@@ -55,8 +48,7 @@ pub const Flag = struct {
     }
 };
 
-/// Represents a positional argument for a command, such as a file name or a target.
-/// Positional arguments are specified in the order they appear in the command-line input.
+/// PositionalArg represents a positional argument for a command, example:"cli open file.txt".
 pub const PositionalArg = struct {
     name: []const u8,
     description: []const u8,
@@ -64,17 +56,17 @@ pub const PositionalArg = struct {
     variadic: bool = false,
 };
 
-/// Represents the context of a command execution, providing access to the command, its parent, flags, arguments, and additional data.
+/// CommandContext represents the context of a command execution. Powerful!
 pub const CommandContext = struct {
     root: *Command,
     direct_parent: *Command,
     command: *Command,
     allocator: std.mem.Allocator,
     positional_args: []const []const u8,
+    spinner: *Spinner,
     data: ?*anyopaque = null,
 
-    /// Retrieves the value of a flag by its name and casts it to the specified type `T`.
-    /// Falls back to the flag's default value if it is not explicitly set.
+    // TODO: fix panic: integer cast truncated bits - later im tired
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
         if (self.command.flag_values.get(flag_name)) |val| {
             return switch (val) {
@@ -96,8 +88,15 @@ pub const CommandContext = struct {
         unreachable;
     }
 
-    /// Retrieves the value of a positional argument by its name.
-    /// Returns `null` if the argument is not provided or not defined.
+    fn getDefaultValue(comptime T: type) T {
+        return switch (@typeInfo(T)) {
+            .bool => false,
+            .int => 0,
+            .pointer => |ptr_info| if (ptr_info.child == u8) "" else @compileError("Unsupported pointer type"),
+            else => @compileError("Unsupported type for flag"),
+        };
+    }
+
     pub fn getArg(self: *const CommandContext, name: []const u8) ?[]const u8 {
         const spec = self.command.positional_args.items;
         for (spec, 0..) |arg, i| {
@@ -109,7 +108,6 @@ pub const CommandContext = struct {
         return null; // not defined
     }
 
-    /// Retrieves the context-specific data and casts it to the specified type `T`.
     pub fn getContextData(self: *const CommandContext, comptime T: type) *T {
         return @alignCast(@ptrCast(self.data.?));
     }
@@ -122,7 +120,7 @@ const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 /// common error would error: dependency loop detected if this function is not passed to the init function.
 const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
 
-/// Represents the metadata for a command, such as its name, description, version, and additional options.
+/// CommandOptions represents the metadata for a command, such as the name, description, version, and more.
 pub const CommandOptions = struct {
     section_title: []const u8 = "General",
     name: []const u8,
@@ -138,8 +136,11 @@ pub const CommandOptions = struct {
     replaced_by: ?[]const u8 = null,
 };
 
-/// Represents a single command in the CLI, such as `run` or `version`.
-/// Commands can have flags, positional arguments, subcommands, and an execution function.
+/// Represents a single command in the Command Line Interface (CLI),
+/// such as "run", "version", or any other user-invoked operation.
+/// Each command encapsulates specific functionality or behavior
+/// that the CLI can execute.
+/// Command represents a single command in the CLI, such as "run" or "version".
 pub const Command = struct {
     options: CommandOptions,
 
@@ -160,8 +161,6 @@ pub const Command = struct {
     stdout: Writer = std.io.getStdOut().writer(),
     stderr: Writer = std.io.getStdErr().writer(),
 
-    /// Initializes a new command with the given options and execution function.
-    /// Automatically adds a default `--help` flag to the command.
     pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
         const cmd = try allocator.create(Command);
         cmd.* = Command{
@@ -190,7 +189,6 @@ pub const Command = struct {
         return cmd;
     }
 
-    /// Deinitializes the command, freeing all associated resources.
     pub fn deinit(self: *Command) void {
         self.positional_args.deinit();
 
@@ -209,7 +207,6 @@ pub const Command = struct {
         self.allocator.destroy(self);
     }
 
-    /// Lists all subcommands of the current command, sorted alphabetically by name.
     pub fn listCommands(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
             return;
@@ -234,7 +231,6 @@ pub const Command = struct {
         try printAlignedCommands(commands.items);
     }
 
-    /// Lists all subcommands grouped by their section titles.
     pub fn listCommandsBySection(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
             return;
@@ -279,7 +275,6 @@ pub const Command = struct {
         }
     }
 
-    /// Lists all flags of the current command, excluding hidden flags.
     pub fn listFlags(self: *const Command) !void {
         if (self.flags_by_name.count() == 0) {
             return;
@@ -302,7 +297,6 @@ pub const Command = struct {
         try printAlignedFlags(flags.items);
     }
 
-    /// Lists all positional arguments of the current command, including their descriptions and requirements.
     pub fn listPositionalArgs(self: *const Command) !void {
         if (self.positional_args.items.len == 0) return;
 
@@ -331,7 +325,19 @@ pub const Command = struct {
         try self.stdout.print("\n", .{});
     }
 
-    /// Prints the usage line for the current command, including its flags and positional arguments.
+    pub fn listAliases(self: *Command) !void {
+        if (self.options.aliases) |aliases| {
+            if (aliases.len == 0) return;
+            try self.stdout.print("Aliases: ", .{});
+            for (aliases, 0..) |alias, i| {
+                try self.stdout.print("{s}", .{alias});
+                if (i < aliases.len - 1) {
+                    try self.stdout.print(", ", .{});
+                }
+            }
+        }
+    }
+
     pub fn printUsageLine(self: *Command) !void {
         const parents = try self.getParents(self.allocator);
         defer parents.deinit();
@@ -356,7 +362,334 @@ pub const Command = struct {
         }
     }
 
-    /// Executes the command, parsing flags and arguments, and invoking the associated execution function.
+    pub fn showInfo(self: *const Command) !void {
+        try self.stdout.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
+        if (self.options.version) |version| try self.stdout.print("{s}v{}{s}\n", .{ styles.DIM, version, styles.RESET });
+    }
+
+    pub fn showVersion(self: *const Command) !void {
+        if (self.options.version) |version| try self.stdout.print("{}\n", .{version});
+    }
+
+    pub fn printHelp(self: *Command) !void {
+        if (!self.options.deprecated) {
+            try self.showInfo();
+            try self.stdout.print("\n", .{});
+
+            if (self.options.help) |help| {
+                try self.stdout.print("{s}\n\n", .{help});
+            }
+
+            const parents = try self.getParents(self.allocator);
+            defer parents.deinit();
+
+            // Usage
+            if (self.options.usage) |usage| {
+                try self.stdout.print("Usage: {s}\n", .{usage});
+            } else {
+                try self.printUsageLine();
+            }
+
+            if (self.options.aliases) |aliases| {
+                if (aliases.len > 0) {
+                    try self.stdout.print("\n\n", .{});
+                }
+            }
+
+            // Aliases
+            try self.listAliases();
+
+            // Sub commands
+            try self.stdout.print("\n", .{});
+
+            if (self.commands_by_name.count() > 0) try self.stdout.print("\n", .{});
+            try self.listCommands();
+            try self.stdout.print("\n", .{});
+
+            // Flags
+            try self.listFlags();
+            if (self.flags_by_name.count() > 0) try self.stdout.print("\n", .{});
+
+            // Arguments
+            try self.listPositionalArgs();
+
+            const has_subcommands = self.commands_by_name.count() > 0;
+
+            try self.stdout.print("Use \"", .{});
+            for (parents.items) |p| {
+                try self.stdout.print("{s} ", .{p.options.name});
+            }
+            try self.stdout.print("{s}", .{self.options.name});
+
+            if (has_subcommands) {
+                try self.stdout.print(" [command]", .{});
+            }
+            try self.stdout.print(" --help\" for more information.\n", .{});
+        }
+    }
+
+    pub fn getParents(self: *Command, allocator: std.mem.Allocator) !std.ArrayList(*Command) {
+        var list = std.ArrayList(*Command).init(allocator);
+
+        var cmd = self;
+        while (cmd.parent) |p| {
+            try list.append(p);
+            cmd = p;
+        }
+
+        std.mem.reverse(*Command, list.items);
+        return list;
+    }
+
+    pub fn addCommand(self: *Command, command: *Command) !void {
+        command.parent = self;
+        try self.commands_by_name.put(command.options.name, command);
+        if (command.options.aliases) |aliases| {
+            for (aliases) |alias| {
+                try self.command_by_aliases.put(alias, command);
+            }
+        }
+        if (command.options.shortcut) |shortcut| try self.commands_by_shortcut.put(shortcut, command);
+    }
+
+    pub fn addCommands(self: *Command, commands: []const *Command) !void {
+        for (commands) |cmd| try self.addCommand(cmd);
+    }
+
+    pub fn addPositionalArg(self: *Command, pos_arg: PositionalArg) !void {
+        if (self.positional_args.items.len > 0) {
+            const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
+            if (last_arg.variadic) {
+                try self.stderr.print("Variadic args should only appear at the end.\n", .{});
+                std.process.exit(1);
+            }
+        }
+        try self.positional_args.append(pos_arg);
+    }
+
+    pub fn addFlag(self: *Command, flag: Flag) !void {
+        try self.flags_by_name.put(flag.name, flag);
+        if (flag.shortcut) |shortcut| try self.flags_by_shortcut.put(shortcut, flag);
+
+        try self.flag_values.put(flag.name, flag.default_value);
+    }
+
+    pub fn addFlags(self: *Command, flags: []const Flag) !void {
+        for (flags) |flag| {
+            try self.addFlag(flag);
+        }
+    }
+
+    // cli run --faas pp --me --op=77 -p -abc xxxx yyyy zzzz
+    fn parseArgsAndFlags(self: *Command, args: *std.ArrayList([]const u8), out_positionals: *std.ArrayList([]const u8)) !void {
+        while (args.items.len > 0) {
+            const arg = args.items[0];
+
+            if (args.items.len > 0 and
+                (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")))
+            {
+                try self.printHelp();
+                std.process.exit(0);
+            }
+
+            // Handle flags (all the existing parseFlags logic)
+            if (std.mem.startsWith(u8, arg, "--")) {
+                // --flag=value
+                if (std.mem.indexOf(u8, arg[2..], "=")) |eql_index| {
+                    const flag_name = arg[2..][0..eql_index];
+                    const value = arg[2 + eql_index + 1 ..];
+                    const flag = self.findFlag(flag_name);
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        std.process.exit(1);
+                    }
+                    const flag_value = flag.?.safeEvaluate(value) catch {
+                        try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                        try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                        try self.displayCommandError();
+                        std.process.exit(1);
+                    };
+                    try self.flag_values.put(flag.?.name, flag_value);
+                    _ = try popFront([]const u8, args);
+                }
+                // --flag [value] or boolean
+                else {
+                    const flag_name = arg[2..];
+                    const flag = self.findFlag(flag_name);
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        std.process.exit(1);
+                    }
+                    const has_next = args.items.len > 1;
+                    const next_value = if (has_next) args.items[1] else null;
+
+                    if (flag.?.type == .Bool) {
+                        if (next_value) |val| {
+                            const is_true = std.mem.eql(u8, val, "true");
+                            const is_false = std.mem.eql(u8, val, "false");
+                            if (is_true or is_false) {
+                                try self.flag_values.put(flag.?.name, .{ .Bool = is_true });
+                                _ = try popFront([]const u8, args); // --flag
+                                _ = try popFront([]const u8, args); // true/false
+                                continue;
+                            }
+                        }
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                        _ = try popFront([]const u8, args);
+                    } else {
+                        if (!has_next) {
+                            try self.stderr.print("Missing value for flag --{s}\n", .{flag_name});
+                            try self.displayCommandError();
+                            std.process.exit(1);
+                        }
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.stderr.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                            try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            try self.displayCommandError();
+                            std.process.exit(1);
+                        };
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // --flag
+                        _ = try popFront([]const u8, args); // value
+                    }
+                }
+            }
+            // -abc short flags
+            else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1 and !std.mem.eql(u8, arg, "-")) {
+                const shortcuts = arg[1..];
+                var j: usize = 0;
+                while (j < shortcuts.len) : (j += 1) {
+                    const shortcut = shortcuts[j .. j + 1];
+                    const flag = self.findFlag(shortcut);
+                    if (flag == null) {
+                        try self.stderr.print("Unknown flag: -{c}\n", .{shortcuts[j]});
+                        std.process.exit(1);
+                    }
+                    if (flag.?.type == .Bool) {
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                    } else {
+                        if (j < shortcuts.len - 1) {
+                            try self.stderr.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
+                            std.process.exit(1);
+                        }
+                        if (args.items.len < 2) {
+                            try self.stderr.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
+                            std.process.exit(1);
+                        }
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.stderr.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
+                            try self.stderr.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            std.process.exit(1);
+                        };
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // value
+                    }
+                }
+                _ = try popFront([]const u8, args); // -abc
+            }
+            // Positional argument
+            else {
+                const val = try popFront([]const u8, args);
+                try out_positionals.append(val);
+            }
+        }
+    }
+
+    fn findFlag(self: *Command, name_or_shortcut: []const u8) ?Flag {
+        if (self.flags_by_name.get(name_or_shortcut)) |flag| return flag;
+        if (self.flags_by_shortcut.get(name_or_shortcut)) |flag| return flag;
+        return null;
+    }
+
+    fn parsePositionalArgs(self: *Command, args: *std.ArrayList([]const u8)) !void {
+        const expected = self.positional_args.items;
+
+        var required_count: u8 = 0;
+        for (expected) |value| {
+            if (value.required) required_count += 1;
+        }
+
+        if (args.items.len < required_count) {
+            try self.stderr.print("Missing {d} positional argument(s).\n\nExpected: ", .{required_count});
+
+            var first = true;
+            for (expected) |arg| {
+                if (arg.required) {
+                    if (!first) try self.stderr.print(", ", .{});
+                    try self.stderr.print("{s}", .{arg.name});
+                    first = false;
+                }
+            }
+
+            try self.stderr.print("\n", .{});
+            try self.displayCommandError();
+            return error.MissingArgs;
+        }
+
+        if (expected.len > 0) {
+            const last_arg = expected[expected.len - 1];
+            if (!last_arg.variadic and args.items.len > expected.len) {
+                try self.stderr.print("Too many positional arguments. Expected at most {}.\n", .{expected.len});
+                try self.displayCommandError();
+                return error.TooManyArgs;
+            }
+        }
+    }
+
+    pub fn findCommand(self: *const Command, name_or_shortcut: []const u8) ?*Command {
+        if (self.commands_by_name.get(name_or_shortcut)) |cmd| return cmd;
+        if (self.command_by_aliases.get(name_or_shortcut)) |cmd| return cmd;
+        if (self.commands_by_shortcut.get(name_or_shortcut)) |cmd| return cmd;
+        return null;
+    }
+
+    fn checkDeprecated(self: *const Command) !void {
+        if (self.options.deprecated) {
+            if (self.options.version) |version| {
+                try self.stdout.print("'{s}' v{} is deprecated\n", .{ self.options.name, version });
+            } else {
+                try self.stdout.print("'{s}' is deprecated\n", .{self.options.name});
+            }
+
+            if (self.options.replaced_by) |new_cmd_name| {
+                try self.stdout.print("\nUse '{s}' instead.\n", .{new_cmd_name});
+            }
+
+            return error.CommandDeprecated;
+        }
+    }
+
+    // Traverse the commands to find the last one in the user input
+    fn findLeaf(self: *Command, args: *std.ArrayList([]const u8)) !*Command {
+        var current = self;
+
+        while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
+            const name = args.items[0];
+            const maybe_next = current.findCommand(name);
+
+            if (maybe_next == null) {
+                // Check if the current command expects positional arguments
+                const expects_pos_args = current.positional_args.items.len > 0;
+                if (!expects_pos_args) {
+                    try current.stderr.print("Unknown command: '{s}'\n", .{name});
+                    try current.displayCommandError();
+                    return error.UnknownCommand;
+                }
+                break;
+            }
+
+            _ = try popFront([]const u8, args);
+            current = maybe_next.?;
+        }
+
+        return current;
+    }
+
+    // Need to make find command, parse flags and parse pos_args execution in parallel
     pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
         var bw = std.io.bufferedWriter(self.stdout);
         defer bw.flush() catch {};
@@ -386,6 +719,9 @@ pub const Command = struct {
         try cmd.parseArgsAndFlags(&args, &pos_args);
         cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
 
+        const spinner = try Spinner.init(cmd.allocator, .{});
+        defer spinner.deinit(); // Ensure it's always deinitialized
+
         const root = self;
         const ctx = CommandContext{
             .root = root,
@@ -393,13 +729,13 @@ pub const Command = struct {
             .command = cmd,
             .allocator = cmd.allocator,
             .positional_args = pos_args.items,
+            .spinner = spinner,
             .data = context.data,
         };
 
         try cmd.execFn(ctx);
     }
 
-    /// Displays the command error, suggesting the correct usage.
     fn displayCommandError(self: *Command) !void {
         const parents = try self.getParents(self.allocator);
         defer parents.deinit();
@@ -411,9 +747,6 @@ pub const Command = struct {
         try self.stderr.print("{s} --help'\n", .{self.options.name});
     }
 };
-
-/// Progress indicator for long running operations
-pub const Spinner = struct {};
 
 // HELPER FUNCTIONS
 
@@ -526,15 +859,10 @@ fn printAlignedFlags(flags: []const Flag) !void {
 }
 
 /// Pop the first element from the list and shift the rest
+// A more efficient popFront
 fn popFront(comptime T: type, list: *std.ArrayList(T)) !T {
     if (list.items.len == 0) return error.Empty;
-    const first = list.items[0];
-    // Shift remaining elements
-    for (list.items[1..], 0..) |item, i| {
-        list.items[i] = item;
-    }
-    _ = list.pop(); // remove the last (now duplicate) element
-    return first;
+    return list.orderedRemove(0);
 }
 
 // Test suite for CLI library
