@@ -203,7 +203,7 @@ pub fn run(ctx: zli.CommandContext) !void {
     // Step 4: Mark the final task as successful and stop.
     try ctx.spinner.succeed("Success! Found value: {s} (flag: {any})", .{ value, fl });
 }
-
+```
 
 ## ✅ Features Checklist
 
@@ -224,4 +224,3 @@ pub fn run(ctx: zli.CommandContext) !void {
 ## 📝 License
 
 MIT. See [LICENSE](LICENSE). Contributions welcome.
-```
