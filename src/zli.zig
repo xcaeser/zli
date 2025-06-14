@@ -236,6 +236,7 @@ pub const Command = struct {
             return;
         }
 
+        // Map to group commands by their section title.
         var section_map = std.StringHashMap(std.ArrayList(*Command)).init(self.allocator);
         defer {
             var it = section_map.iterator();
@@ -245,6 +246,7 @@ pub const Command = struct {
             section_map.deinit();
         }
 
+        // Populate the map.
         var it = self.commands_by_name.iterator();
         while (it.next()) |entry| {
             const cmd = entry.value_ptr.*;
@@ -257,22 +259,42 @@ pub const Command = struct {
             try list.value_ptr.*.append(cmd);
         }
 
-        var sit = section_map.iterator();
-        while (sit.next()) |entry| {
-            const section = entry.key_ptr.*;
-            const cmds = entry.value_ptr.*;
+        // --- START: MODIFIED SECTION ---
 
-            try self.stdout.print("{s}:\n", .{section});
+        // 1. Collect all section titles (keys) from the map.
+        var section_keys = std.ArrayList([]const u8).init(self.allocator);
+        defer section_keys.deinit();
 
-            std.sort.insertion(*Command, cmds.items, {}, struct {
+        var key_it = section_map.keyIterator();
+        while (key_it.next()) |key| {
+            try section_keys.append(key.*);
+        }
+
+        std.sort.insertion([]const u8, section_keys.items, {}, struct {
+            pub fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                // Sort by command name, not section title
+                return std.mem.order(u8, a, b) == .lt;
+            }
+        }.lessThan);
+
+        for (section_keys.items) |section_name| {
+            // We know the key exists, so we can use .?
+            const cmds_list = section_map.get(section_name).?;
+
+            try self.stdout.print("{s}{s}{s}:\n", .{ styles.BOLD, section_name, styles.RESET });
+
+            // 4. FIX: Sort the commands *within* this section by their name.
+            std.sort.insertion(*Command, cmds_list.items, {}, struct {
                 pub fn lessThan(_: void, a: *Command, b: *Command) bool {
+                    // Sort by command name, not section title
                     return std.mem.order(u8, a.options.name, b.options.name) == .lt;
                 }
             }.lessThan);
 
-            try printAlignedCommands(cmds.items);
+            try printAlignedCommands(cmds_list.items);
             try self.stdout.print("\n", .{});
         }
+        // --- END: MODIFIED SECTION ---
     }
 
     pub fn listFlags(self: *const Command) !void {
@@ -371,6 +393,7 @@ pub const Command = struct {
         if (self.options.version) |version| try self.stdout.print("{}\n", .{version});
     }
 
+    /// Prints traditional help with commands NOT organized by sections
     pub fn printHelp(self: *Command) !void {
         if (!self.options.deprecated) {
             try self.showInfo();
@@ -404,6 +427,64 @@ pub const Command = struct {
 
             if (self.commands_by_name.count() > 0) try self.stdout.print("\n", .{});
             try self.listCommands();
+            try self.stdout.print("\n", .{});
+
+            // Flags
+            try self.listFlags();
+            if (self.flags_by_name.count() > 0) try self.stdout.print("\n", .{});
+
+            // Arguments
+            try self.listPositionalArgs();
+
+            const has_subcommands = self.commands_by_name.count() > 0;
+
+            try self.stdout.print("Use \"", .{});
+            for (parents.items) |p| {
+                try self.stdout.print("{s} ", .{p.options.name});
+            }
+            try self.stdout.print("{s}", .{self.options.name});
+
+            if (has_subcommands) {
+                try self.stdout.print(" [command]", .{});
+            }
+            try self.stdout.print(" --help\" for more information.\n", .{});
+        }
+    }
+
+    /// Prints help with commands organized by sections
+    pub fn printStructuredHelp(self: *Command) !void {
+        if (!self.options.deprecated) {
+            try self.showInfo();
+            try self.stdout.print("\n", .{});
+
+            if (self.options.help) |help| {
+                try self.stdout.print("{s}\n\n", .{help});
+            }
+
+            const parents = try self.getParents(self.allocator);
+            defer parents.deinit();
+
+            // Usage
+            if (self.options.usage) |usage| {
+                try self.stdout.print("Usage: {s}\n", .{usage});
+            } else {
+                try self.printUsageLine();
+            }
+
+            if (self.options.aliases) |aliases| {
+                if (aliases.len > 0) {
+                    try self.stdout.print("\n\n", .{});
+                }
+            }
+
+            // Aliases
+            try self.listAliases();
+
+            // Sub commands
+            try self.stdout.print("\n", .{});
+
+            if (self.commands_by_name.count() > 0) try self.stdout.print("\n", .{});
+            try self.listCommandsBySection();
             try self.stdout.print("\n", .{});
 
             // Flags
