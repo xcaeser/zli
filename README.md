@@ -26,7 +26,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v3.7.0)
+- Spinners (new in v3.7.0 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
@@ -176,7 +176,7 @@ fn show(ctx: zli.CommandContext) !void {
 }
 ```
 
-### Spinners example
+### Spinners example - experimental
 
 ```zig
 const std = @import("std");
