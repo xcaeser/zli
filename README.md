@@ -1,4 +1,4 @@
-### 📟 zli
+### 📟 zli v4.0.0
 
 A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
@@ -6,10 +6,10 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 All batteries included.
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
-[![Zig Version](https://img.shields.io/badge/Zig_Version-0.14.1-orange.svg?logo=zig)](README.md)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v3.7.1-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.0.0-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -26,19 +26,19 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v3.7.1 - experimental)
+- Spinners (new in v4.0.0 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.1.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.0.tar.gz
 ```
 
 Add to your `build.zig`:
 
 ```zig
-const zli_dep = b.dependency("zli", .{ .target = target });
+const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize });
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
@@ -64,27 +64,35 @@ your-app/
 ```zig
 // src/main.zig
 const std = @import("std");
+const fs = std.fs;
 const cli = @import("cli/root.zig");
 
 pub fn main() !void {
     const allocator = std.heap.smp_allocator;
-    var root = try cli.build(allocator);
+
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
+    const root = try cli.build(&writer, allocator);
     defer root.deinit();
 
     try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
+
+    try writer.flush(); // Don't forget to flush!
 }
 ```
 
 ```zig
 // src/cli/root.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 const run = @import("run.zig");
 const version = @import("version.zig");
 
-pub fn build(allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(allocator, .{
+pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, allocator, .{
         .name = "blitz",
         .description = "Your dev toolkit CLI",
     }, showHelp);
@@ -105,6 +113,7 @@ fn showHelp(ctx: zli.CommandContext) !void {
 ```zig
 // src/cli/run.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 const now_flag = zli.Flag{
@@ -115,8 +124,8 @@ const now_flag = zli.Flag{
     .default_value = .{ .Bool = false },
 };
 
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(allocator, .{
+pub fn register(writer: *Writer,allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
         .name = "run",
         .description = "Run your workflow",
     }, run);
@@ -140,7 +149,7 @@ fn run(ctx: zli.CommandContext) !void {
     const now = ctx.flag("now", bool); // type-safe flag access
 
     const script = ctx.getArg("script") orelse {
-        try ctx.command.stderr.print("Missing script arg\n", .{});
+        try ctx.command.writer.print("Missing script arg\n", .{});
         return;
     };
     const env = ctx.getArg("env") orelse "default";
@@ -161,10 +170,11 @@ fn run(ctx: zli.CommandContext) !void {
 ```zig
 // src/cli/version.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    return zli.Command.init(allocator, .{
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    return zli.Command.init(writer, allocator, .{
         .name = "version",
         .shortcut = "v",
         .description = "Show CLI version",

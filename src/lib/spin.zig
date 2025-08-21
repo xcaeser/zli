@@ -1,4 +1,8 @@
 const std = @import("std");
+const Io = std.Io;
+const Writer = Io.Writer;
+const Allocator = std.mem.Allocator;
+
 const builtin = @import("builtin.zig");
 pub const styles = builtin.styles;
 
@@ -6,9 +10,6 @@ var g_active_spinner: ?*Spinner = null;
 
 /// Progress indicator for long running operations
 const Spinner = @This();
-
-const Writer = @TypeOf(std.io.getStdOut().writer());
-const Allocator = std.mem.Allocator;
 
 /// The state of an individual line managed by the spinner.
 const LineState = enum {
@@ -52,7 +53,7 @@ thread: ?std.Thread = null,
 frame_index: usize = 0,
 lines_drawn: usize = 0,
 
-writer: Writer,
+writer: *Writer,
 mutex: std.Thread.Mutex = .{},
 allocator: Allocator,
 
@@ -61,7 +62,7 @@ prev_handler: std.posix.Sigaction,
 handler_installed: bool,
 
 /// Initialize a new spinner. Does not start it.
-pub fn init(allocator: Allocator, options: SpinnerOptions) !*Spinner {
+pub fn init(writer: *Writer, allocator: Allocator, options: SpinnerOptions) !*Spinner {
     const spinner = try allocator.create(Spinner);
 
     const owned_frames = try allocator.dupe([]const u8, options.frames);
@@ -69,11 +70,11 @@ pub fn init(allocator: Allocator, options: SpinnerOptions) !*Spinner {
 
     spinner.* = Spinner{
         .allocator = allocator,
-        .writer = std.io.getStdOut().writer(),
+        .writer = writer,
         .frames = owned_frames,
         .interval = options.interval_ms * std.time.ns_per_ms,
         .is_running = std.atomic.Value(bool).init(false),
-        .lines = std.ArrayList(SpinnerLine).init(allocator),
+        .lines = std.ArrayList(SpinnerLine).empty,
         .prev_handler = undefined,
         .handler_installed = false,
     };
@@ -82,7 +83,7 @@ pub fn init(allocator: Allocator, options: SpinnerOptions) !*Spinner {
         g_active_spinner = spinner;
         var new_action: std.posix.Sigaction = .{
             .handler = .{ .handler = handleInterrupt },
-            .mask = std.posix.empty_sigset, // Use std.posix
+            .mask = std.posix.sigemptyset(), // Use std.posix
             .flags = 0,
         };
         std.posix.sigaction(std.posix.SIG.INT, &new_action, &spinner.prev_handler);
@@ -103,7 +104,7 @@ pub fn deinit(self: *Spinner) void {
         self.stop() catch {};
     }
     for (self.lines.items) |line| self.allocator.free(line.message);
-    self.lines.deinit();
+    self.lines.deinit(self.allocator);
     self.allocator.free(self.frames);
     self.allocator.destroy(self);
 }
@@ -129,7 +130,7 @@ pub fn start(self: *Spinner, options: SpinnerOptions, comptime format: []const u
     const message = try std.fmt.allocPrint(self.allocator, format, args);
     errdefer self.allocator.free(message);
 
-    try self.lines.append(.{ .message = message, .state = .spinning });
+    try self.lines.append(self.allocator, .{ .message = message, .state = .spinning });
 
     self.is_running.store(true, .release);
     self.thread = try std.Thread.spawn(.{}, spinLoop, .{self});
@@ -195,7 +196,7 @@ pub fn nextStep(self: *Spinner, comptime format: []const u8, args: anytype) !voi
         line.state = .succeeded;
     }
 
-    try self.lines.append(.{ .message = new_text, .state = .spinning });
+    try self.lines.append(self.allocator, .{ .message = new_text, .state = .spinning });
 }
 
 /// Adds a static, preserved line of text (like a log) above the spinner.
@@ -212,7 +213,7 @@ pub fn addLine(self: *Spinner, comptime format: []const u8, args: anytype) !void
         if (self.lines.items[i].state == .spinning) break;
     }
 
-    try self.lines.insert(i, .{ .message = message, .state = .preserved });
+    try self.lines.insert(self.allocator, i, .{ .message = message, .state = .preserved });
 }
 
 fn finalize(self: *Spinner, final_state: LineState, comptime format: []const u8, args: anytype) !void {
@@ -224,7 +225,7 @@ fn finalize(self: *Spinner, final_state: LineState, comptime format: []const u8,
         line.state = final_state;
     } else {
         // If there was no spinning line, create one with the final state.
-        try self.lines.append(.{ .message = new_text, .state = final_state });
+        try self.lines.append(self.allocator, .{ .message = new_text, .state = final_state });
     }
     self.mutex.unlock();
     try self.stop();

@@ -106,10 +106,10 @@ Positional arguments are values passed to a command after its name and flags, id
 1.  Fetch `zli` as a dependency using Zig's package manager:
 
     ```sh
-    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v3.7.1.tar.gz
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.0.tar.gz
     ```
 
-    (Replace `v3.7.1` with the desired version). This adds the dependency to your `build.zig.zon`.
+    (Replace `v4.0.0` with the desired version). This adds the dependency to your `build.zig.zon`.
 
 2.  Add `zli` to your executable in `build.zig`:
 
@@ -176,14 +176,20 @@ pub fn main() !void {
     // std.heap.page_allocator is also a common choice for CLIs.
     const allocator = std.heap.smp_allocator;
 
+    // New zig Io as of v0.15.1
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
     // Build the command structure
-    var root_command = try cli_root.build(allocator);
-    defer root_command.deinit(); // Ensure all command resources are freed
+    const root_command = try cli_root.build(&writer, allocator); // pass the writer io
+    defer root_command.deinit();
 
     // Execute the command based on os.args
     // You can pass custom data here if needed:
     // try root_command.execute(.{ .data = &my_custom_data });
     try root_command.execute(.{});
+
+    try writer.flush(); // Don't forget to flush!
 }
 ```
 
@@ -201,6 +207,7 @@ The root command is the entry point of your CLI application (e.g., `blitz`).
 ```zig
 // src/cli/root.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 // Forward declare or import subcommand modules
@@ -208,8 +215,8 @@ const run_cmd = @import("run.zig");
 const version_cmd = @import("version.zig");
 
 // This function will be called to construct the root command
-pub fn build(allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(allocator, .{
+pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, allocator, .{
         .name = "blitz",
         .description = "A (fictional) dev toolkit CLI.",
         .version = "v1.0.0", // Optional: for auto --version flag or manual display
@@ -247,11 +254,12 @@ Let's define the `blitz run` subcommand.
 ```zig
 // src/cli/run.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 // This function will be called by root.zig to get this command
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(allocator, .{
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
         .name = "run",
         .description = "Run a specified workflow",
     },
@@ -286,6 +294,7 @@ Modify `src/cli/run.zig`:
 ```zig
 // src/cli/run.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 const now_flag = zli.Flag{
@@ -296,8 +305,8 @@ const now_flag = zli.Flag{
     .default_value = .{ .Bool = false },
 };
 
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(allocator, .{
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
         .name = "run",
         .description = "Run a specified workflow",
     }, runWorkflow);
@@ -341,13 +350,14 @@ Modify `src/cli/run.zig`:
 ```zig
 // src/cli/run.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
 // now_flag definition (as above) ...
 const now_flag = zli.Flag{ /* ... */ };
 
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(allocator, .{
+pub fn register(writer: *Writer,allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
         .name = "run",
         .description = "Run a specified workflow",
     }, runWorkflow);
@@ -378,7 +388,7 @@ fn runWorkflow(ctx: zli.CommandContext) !void {
         // or if you manually handle this logic.
         // zli's help generation will indicate it's required.
         // Actual enforcement might be manual or zli might error before execFn.
-        try ctx.command.stderr.print("Error: Missing required argument 'script'.\n", .{});
+        try ctx.command.writer.print("Error: Missing required argument 'script'.\n", .{});
         try ctx.command.printHelp(.{});
         return zli.UserError.MissingRequiredArgument; // Or an appropriate error
     };
@@ -406,10 +416,11 @@ It's common to have a command to display the application's version.
 ```zig
 // src/cli/version.zig
 const std = @import("std");
+const Writer = std.Io.Writer;
 const zli = @import("zli");
 
-pub fn register(allocator: std.mem.Allocator) !*zli.Command {
-    return zli.Command.init(allocator, .{
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    return zli.Command.init(writer, allocator, .{
         .name = "version",
         .shortcut = "v", // Allows `blitz v`
         .description = "Show CLI version",
@@ -419,9 +430,9 @@ pub fn register(allocator: std.mem.Allocator) !*zli.Command {
 fn showVersion(ctx: zli.CommandContext) !void {
     // Access the version string set on the root command
     if (ctx.root.options.version) |v| {
-        try ctx.command.stdout.print("{s}\n", .{v});
+        try ctx.command.writer.print("{s}\n", .{v});
     } else {
-        try ctx.command.stdout.print("Version not set.\n", .{});
+        try ctx.command.writer.print("Version not set.\n", .{});
     }
 }
 ```
@@ -531,7 +542,7 @@ pub const AppData = struct {
 
 pub fn main() !void {
     // ... allocator setup ...
-    var root = try cli.build(allocator);
+    var root = try cli.build(&writer, allocator);
     defer root.deinit();
 
     var my_app_data = AppData{
@@ -540,6 +551,8 @@ pub fn main() !void {
     };
 
     try root.execute(.{ .allocator = allocator, .data = &my_app_data });
+
+    try writer.flush(); // don't forget to flush
 }
 ```
 
@@ -664,9 +677,7 @@ Provided to `ExecFn`.
 - `.command: *Command` (current command)
 - `.root: *Command` (root command)
 - `.data: ?*anyopaque` (user-provided data)
-- `.stdin: std.fs.File.Reader`
-- `.stdout: std.fs.File.Writer`
-- `.stderr: std.fs.File.Writer`
+- `.writer: std.Io.Writer`
 - `pub fn flag(self: CommandContext, comptime name: []const u8, comptime T: type) T`
 - `pub fn getArg(self: CommandContext, name: []const u8) ?[]const u8`
 
@@ -701,12 +712,15 @@ here's an example of how it works:
 ```zig
 
 const std = @import("std");
+const fs = std.fs;
 const Spinner = @import("spinner.zig").Spinner;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
 
-    // const spinner = try Spinner.init(allocator, .{}); // you don't have to do this if you're using zli. It is initialized automatically for you.
+    // const spinner = try Spinner.init(&writer, allocator, .{}); // you don't have to do this if you're using zli. It is initialized automatically for you.
     // defer spinner.deinit();
 
     try spinner.start("Step 1: Initializing the system...", .{});
@@ -746,6 +760,8 @@ pub fn main() !void {
 
     // The whole process fails at this step
     try spinner2.fail("Authentication failed: Invalid credentials.", .{});
+
+    try writer.flush(); // Don't forget to flush!!
 }
 
 ```
