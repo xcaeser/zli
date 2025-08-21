@@ -539,7 +539,7 @@ pub const Command = struct {
             const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
             if (last_arg.variadic) {
                 try self.writer.print("Variadic args should only appear at the end.\n", .{});
-                std.process.exit(1);
+                return error.ZliAddPositionalArg;
             }
         }
         try self.positional_args.append(self.allocator, pos_arg);
@@ -580,13 +580,13 @@ pub const Command = struct {
                     if (flag == null) {
                         try self.writer.print("Unknown flag: --{s}\n", .{flag_name});
                         try self.displayCommandError();
-                        std.process.exit(1);
+                        return error.ZliParseArgsAndFlags;
                     }
                     const flag_value = flag.?.safeEvaluate(value) catch {
                         try self.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                         try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                         try self.displayCommandError();
-                        std.process.exit(1);
+                        return error.ZliParseArgsAndFlags;
                     };
                     try self.flag_values.put(flag.?.name, flag_value);
                     _ = try popFront([]const u8, args);
@@ -598,7 +598,7 @@ pub const Command = struct {
                     if (flag == null) {
                         try self.writer.print("Unknown flag: --{s}\n", .{flag_name});
                         try self.displayCommandError();
-                        std.process.exit(1);
+                        return error.ZliParseArgsAndFlags;
                     }
                     const has_next = args.items.len > 1;
                     const next_value = if (has_next) args.items[1] else null;
@@ -620,14 +620,14 @@ pub const Command = struct {
                         if (!has_next) {
                             try self.writer.print("Missing value for flag --{s}\n", .{flag_name});
                             try self.displayCommandError();
-                            std.process.exit(1);
+                            return error.ZliParseArgsAndFlags;
                         }
                         const value = args.items[1];
                         const flag_value = flag.?.safeEvaluate(value) catch {
                             try self.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                             try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                             try self.displayCommandError();
-                            std.process.exit(1);
+                            return error.ZliParseArgsAndFlags;
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
                         _ = try popFront([]const u8, args); // --flag
@@ -644,24 +644,24 @@ pub const Command = struct {
                     const flag = self.findFlag(shortcut);
                     if (flag == null) {
                         try self.writer.print("Unknown flag: -{c}\n", .{shortcuts[j]});
-                        std.process.exit(1);
+                        return error.ZliParseArgsAndFlags;
                     }
                     if (flag.?.type == .Bool) {
                         try self.flag_values.put(flag.?.name, .{ .Bool = true });
                     } else {
                         if (j < shortcuts.len - 1) {
                             try self.writer.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
-                            std.process.exit(1);
+                            return error.ZliParseArgsAndFlags;
                         }
                         if (args.items.len < 2) {
                             try self.writer.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
-                            std.process.exit(1);
+                            return error.ZliParseArgsAndFlags;
                         }
                         const value = args.items[1];
                         const flag_value = flag.?.safeEvaluate(value) catch {
                             try self.writer.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
                             try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
-                            std.process.exit(1);
+                            return error.ZliParseArgsAndFlags;
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
                         _ = try popFront([]const u8, args); // value
@@ -793,15 +793,15 @@ pub const Command = struct {
 
         var cmd = self.findLeaf(&args) catch |err| {
             if (err == error.UnknownCommand) {
-                std.process.exit(1);
+                return error.ZliExecute;
             }
             return err;
         };
 
-        cmd.checkDeprecated() catch std.process.exit(1);
+        cmd.checkDeprecated() catch return error.ZliCheckDeprecated;
 
         try cmd.parseArgsAndFlags(&args, &pos_args);
-        cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
+        cmd.parsePositionalArgs(&pos_args) catch return error.ZliParseArgsAndFlags;
 
         const spinner = try Spinner.init(cmd.writer, cmd.allocator, .{});
         defer spinner.deinit();

@@ -1,0 +1,1 @@
+const Spinner = @This();
