@@ -1,0 +1,2482 @@
+-------- FILE: build.zig.zon --------
+.{
+    .name = .zli,
+    .version = "4.0.2",
+    .fingerprint = 0x5b01c9c3a623e52d, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}
+-------- FILE: CONTRIBUTING.md --------
+# Contributing to zli
+
+Thank you for considering contributing to zli!
+
+## Getting Started
+
+1. **Fork the repository** and create your branch from `main`.
+2. **Write clear, concise code** following the existing style.
+3. **Add or update tests** as needed.
+4. **Open a Pull Request** with a detailed description.
+
+## Guidelines
+
+- Keep PRs focused and minimal.
+- Use clear commit messages.
+- Discuss significant changes in an issue before implementation.
+
+## Development Setup
+
+```bash
+# Install dependencies
+zig build
+
+# Run tests
+zig build test
+-------- FILE: README.md --------
+### 📟 zli v4.0.2
+
+A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
+
+Build modular, ergonomic, and high-performance CLIs with ease.
+All batteries included.
+
+[![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
+[![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
+[![Version](https://img.shields.io/badge/ZLI-v4.0.2-green)](https://github.com/xcaeser/zli/releases)
+
+> [!TIP]
+> 🧱 Each command is modular and self-contained.
+
+## 📚 Documentation
+
+See [docs.md](docs.md) for full usage, examples, and internals.
+
+## 🚀 Highlights
+
+- Modular commands & subcommands
+- Fast flag parsing (`--flag`, `--flag=value`, shorthand `-abc`)
+- Type-safe support for `bool`, `int`, `string`
+- Named positional arguments with `required`, `optional`, `variadic`
+- Auto help/version/deprecation handling
+- Pretty help output with aligned flags & args
+- Spinners (new in v4.0.2 - experimental)
+- Usage hints, context-aware
+
+## 📦 Installation
+
+```sh
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.2.tar.gz
+```
+
+Add to your `build.zig`:
+
+```zig
+const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize });
+exe.root_module.addImport("zli", zli_dep.module("zli"));
+```
+
+## 🗂 Suggested Structure
+
+```
+your-app/
+├── build.zig
+├── src/
+│   ├── main.zig
+│   └── cli/
+│       ├── root.zig
+│       ├── run.zig
+│       └── version.zig
+```
+
+- Each command is in its own file
+- You explicitly register subcommands
+- `root.zig` is the entry point
+
+## 🧪 Example
+
+```zig
+// src/main.zig
+const std = @import("std");
+const fs = std.fs;
+const cli = @import("cli/root.zig");
+
+pub fn main() !void {
+    const allocator = std.heap.smp_allocator;
+
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
+    const root = try cli.build(&writer, allocator);
+    defer root.deinit();
+
+    try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
+
+    try writer.flush(); // Don't forget to flush!
+}
+```
+
+```zig
+// src/cli/root.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+const run = @import("run.zig");
+const version = @import("version.zig");
+
+pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, allocator, .{
+        .name = "blitz",
+        .description = "Your dev toolkit CLI",
+    }, showHelp);
+
+    try root.addCommands(&.{
+        try run.register(allocator),
+        try version.register(allocator),
+    });
+
+    return root;
+}
+
+fn showHelp(ctx: zli.CommandContext) !void {
+    try ctx.command.printHelp();
+}
+```
+
+```zig
+// src/cli/run.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+const now_flag = zli.Flag{
+    .name = "now",
+    .shortcut = "n",
+    .description = "Run immediately",
+    .type = .Bool,
+    .default_value = .{ .Bool = false },
+};
+
+pub fn register(writer: *Writer,allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
+        .name = "run",
+        .description = "Run your workflow",
+    }, run);
+
+    try cmd.addFlag(now_flag);
+    try cmd.addPositionalArg(.{
+        .name = "script",
+        .description = "Script to execute",
+        .required = true,
+    });
+    try cmd.addPositionalArg(.{
+        .name = "env",
+        .description = "Environment name",
+        .required = false,
+    });
+
+    return cmd;
+}
+
+fn run(ctx: zli.CommandContext) !void {
+    const now = ctx.flag("now", bool); // type-safe flag access
+
+    const script = ctx.getArg("script") orelse {
+        try ctx.command.writer.print("Missing script arg\n", .{});
+        return;
+    };
+    const env = ctx.getArg("env") orelse "default";
+
+    std.debug.print("Running {s} in {s} (now = {})\n", .{ script, env, now });
+
+    // You can also get other commands by name:
+    // if (ctx.root.findCommand("create")) |create_cmd| {
+    //    try create_cmd.printUsageLine();
+    // }
+
+    // if you passed data to your root command, you can access it here:
+    // const object = ctx.getContextData(type_of_your_data); // can be struct, []const u8, etc., object is a pointer.
+
+};
+```
+
+```zig
+// src/cli/version.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    return zli.Command.init(writer, allocator, .{
+        .name = "version",
+        .shortcut = "v",
+        .description = "Show CLI version",
+    }, show);
+}
+
+fn show(ctx: zli.CommandContext) !void {
+    std.debug.print("{?}\n", .{ctx.root.options.version});
+}
+```
+
+### Spinners example - experimental
+
+```zig
+const std = @import("std");
+const zli = @import("zli");
+
+pub fn run(ctx: zli.CommandContext) !void {
+    // Step 1: Start the first task.
+    try ctx.spinner.start(.{}, "Connecting to vault...", .{});
+    doSomething();
+    try ctx.spinner.updateText("Step 2: Authentication is taking a moment...", .{});
+    doSomething();
+
+    // Step 2: Mark Step 1 as complete and start the next task.
+    const key = ctx.getArg("key") orelse "b";
+    try ctx.spinner.nextStep("Retrieving key '{s}'...", .{key});
+    doSomething();
+
+    // Step 3: Mark Step 2 as complete and start the final task.
+    try ctx.spinner.nextStep("Decrypting value...", .{});
+    const value = try zv.getFromVault(key);
+    const fl = ctx.flag("now", bool);
+    doSomething();
+
+    // Step 4: Mark the final task as successful and stop.
+    try ctx.spinner.succeed("Success! Found value: {s} (flag: {any})", .{ value, fl });
+}
+```
+
+## ✅ Features Checklist
+
+- [x] Commands & subcommands
+- [x] Command aliases
+- [x] Flags & shorthands
+- [x] Type-safe flag values
+- [x] Positional args (required, optional, variadic)
+- [x] Named access: `ctx.getArg("name")`
+- [x] Context data
+- [x] Help/version auto handling
+- [x] Deprecation notices
+- [x] Pretty-aligned help for flags & args
+- [x] Clean usage output like Cobra
+- [x] Spinners and loading state (very powerful)
+- [ ] Persistent flags
+
+## 📝 License
+
+MIT. See [LICENSE](LICENSE). Contributions welcome.
+-------- FILE: build.zig --------
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    // Optional: expose module if reused
+    const mod = b.addModule("zli", .{
+        .root_source_file = b.path("src/zli.zig"),
+        .single_threaded = false,
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Test runner
+    const lib_test = b.addTest(.{
+        .root_module = mod,
+    });
+
+    const run_test = b.addRunArtifact(lib_test);
+    run_test.has_side_effects = true;
+
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_test.step);
+}
+-------- FILE: LICENSE --------
+MIT License
+
+Copyright (c) 2025 xcaeser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-------- FILE: release.sh --------
+#!/bin/bash
+
+# Usage: ./release.sh 1.0.0
+set -e
+
+VERSION=$1
+NOTES_FILE="RELEASE-NOTES.md"
+
+if [ -z "$VERSION" ]; then
+  echo "Usage: $0 <version>"
+  exit 1
+fi
+
+if [ ! -f "$NOTES_FILE" ]; then
+  echo "❌ Release notes file '$NOTES_FILE' not found."
+  exit 1
+fi
+
+# Optional: commit if there are changes
+if ! git diff-index --quiet HEAD --; then
+  git add .
+  git commit -m "Release v$VERSION"
+fi
+
+# Tag and push
+git tag -a "v$VERSION" -m "Version $VERSION"
+git push origin main
+git push origin "v$VERSION"
+
+# Create GitHub release with notes from file
+gh release create "v$VERSION" \
+  --title "v$VERSION" \
+  --notes-file "$NOTES_FILE"
+
+echo "✅ GitHub release v$VERSION published."
+-------- FILE: src/zli.zig --------
+const std = @import("std");
+const Io = std.Io;
+const Writer = Io.Writer;
+const Allocator = std.mem.Allocator;
+const StringHashMap = std.StringHashMap;
+const ArrayList = std.ArrayList;
+
+const builtin = @import("lib/builtin.zig");
+pub const styles = builtin.styles;
+const Spinner = @import("lib/spin.zig");
+pub const SpinnerStyles = Spinner.SpinnerStyles;
+
+/// FlagType represents the type of a flag, can be a boolean, integer, or string.
+pub const FlagType = enum {
+    Bool,
+    Int,
+    String,
+};
+
+/// FlagValue represents the value of a flag, can be a boolean, integer, or string.
+pub const FlagValue = union(FlagType) {
+    Bool: bool,
+    Int: i32,
+    String: []const u8,
+};
+
+/// Flag represents a flag for a command, example: "--verbose". Can be used such as "--verbose true" or "--verbose=22", or just "--verbose".
+pub const Flag = struct {
+    name: []const u8,
+    shortcut: ?[]const u8 = null,
+    description: []const u8,
+    type: FlagType,
+    default_value: FlagValue,
+    hidden: bool = false,
+
+    fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
+        return switch (self.type) {
+            .Bool => {
+                if (std.mem.eql(u8, value, "true")) return FlagValue{ .Bool = true };
+                if (std.mem.eql(u8, value, "false")) return FlagValue{ .Bool = false };
+                return error.InvalidBooleanValue;
+            },
+            .Int => FlagValue{ .Int = try std.fmt.parseInt(i32, value, 10) },
+            .String => FlagValue{ .String = value },
+        };
+    }
+
+    fn safeEvaluate(self: *const Flag, value: []const u8) !FlagValue {
+        return self.evaluateValueType(value) catch {
+            return error.InvalidFlagValue;
+        };
+    }
+};
+
+/// PositionalArg represents a positional argument for a command, example:"cli open file.txt".
+pub const PositionalArg = struct {
+    name: []const u8,
+    description: []const u8,
+    required: bool,
+    variadic: bool = false,
+};
+
+/// CommandContext represents the context of a command execution. Powerful!
+pub const CommandContext = struct {
+    root: *Command,
+    direct_parent: *Command,
+    command: *Command,
+    allocator: Allocator,
+    positional_args: []const []const u8,
+    spinner: *Spinner,
+    data: ?*anyopaque = null,
+
+    // TODO: fix panic: integer cast truncated bits - later im tired
+    pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
+        if (self.command.flag_values.get(flag_name)) |val| {
+            return switch (val) {
+                .Bool => |b| if (T == bool) b else getDefaultValue(T),
+                .Int => |i| if (@typeInfo(T) == .int) @as(T, @intCast(i)) else getDefaultValue(T),
+                .String => |s| if (T == []const u8) s else getDefaultValue(T),
+            };
+        }
+
+        if (self.command.findFlag(flag_name)) |found_flag| {
+            return switch (found_flag.default_value) {
+                .Bool => |b| if (T == bool) b else getDefaultValue(T),
+                .Int => |i| if (@typeInfo(T) == .int) @as(T, @intCast(i)) else getDefaultValue(T),
+                .String => |s| if (T == []const u8) s else getDefaultValue(T),
+            };
+        }
+
+        // Should be unreachable if all flags have defaults and validation is correct.
+        unreachable;
+    }
+
+    fn getDefaultValue(comptime T: type) T {
+        return switch (@typeInfo(T)) {
+            .bool => false,
+            .int => 0,
+            .pointer => |ptr_info| if (ptr_info.child == u8) "" else @compileError("Unsupported pointer type"),
+            else => @compileError("Unsupported type for flag"),
+        };
+    }
+
+    pub fn getArg(self: *const CommandContext, name: []const u8) ?[]const u8 {
+        const spec = self.command.positional_args.items;
+        for (spec, 0..) |arg, i| {
+            if (std.mem.eql(u8, arg.name, name)) {
+                if (i < self.positional_args.len) return self.positional_args[i];
+                return null; // not provided
+            }
+        }
+        return null; // not defined
+    }
+
+    pub fn getContextData(self: *const CommandContext, comptime T: type) *T {
+        return @ptrCast(@alignCast(self.data.?));
+    }
+};
+
+/// ExecFn is the type of function that is executed when the command is executed.
+const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
+
+/// This is needed to fool the compiler that we are not doing dependency loop
+/// common error would error: dependency loop detected if this function is not passed to the init function.
+const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
+
+/// CommandOptions represents the metadata for a command, such as the name, description, version, and more.
+pub const CommandOptions = struct {
+    section_title: []const u8 = "General",
+    name: []const u8,
+    description: []const u8,
+    version: ?std.SemanticVersion = null,
+    commands_title: []const u8 = "Available commands",
+    shortcut: ?[]const u8 = null,
+    aliases: ?[]const []const u8 = null,
+    short_description: ?[]const u8 = null,
+    help: ?[]const u8 = null,
+    usage: ?[]const u8 = null,
+    deprecated: bool = false,
+    replaced_by: ?[]const u8 = null,
+};
+
+/// Represents a single command in the Command Line Interface (CLI),
+/// such as "run", "version", or any other user-invoked operation.
+/// Each command encapsulates specific functionality or behavior
+/// that the CLI can execute.
+pub const Command = struct {
+    options: CommandOptions,
+
+    flags_by_name: StringHashMap(Flag),
+    flags_by_shortcut: StringHashMap(Flag),
+    flag_values: StringHashMap(FlagValue),
+
+    positional_args: ArrayList(PositionalArg),
+
+    execFn: ExecFn,
+
+    commands_by_name: StringHashMap(*Command),
+    commands_by_shortcut: StringHashMap(*Command),
+    command_by_aliases: StringHashMap(*Command),
+
+    parent: ?*Command = null,
+    allocator: Allocator,
+    writer: *Writer,
+
+    pub fn init(writer: *Writer, allocator: Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
+        const cmd = try allocator.create(Command);
+        cmd.* = Command{
+            .writer = writer,
+            .allocator = allocator,
+            .options = options,
+            .positional_args = ArrayList(PositionalArg).empty,
+            .execFn = execFn,
+            .flags_by_name = StringHashMap(Flag).init(allocator),
+            .flags_by_shortcut = StringHashMap(Flag).init(allocator),
+            .flag_values = StringHashMap(FlagValue).init(allocator),
+            .commands_by_name = StringHashMap(*Command).init(allocator),
+            .commands_by_shortcut = StringHashMap(*Command).init(allocator),
+            .command_by_aliases = StringHashMap(*Command).init(allocator),
+        };
+
+        const helpFlag: Flag = .{
+            .name = "help",
+            .description = "Shows the help for a command",
+            .shortcut = "h",
+            .type = .Bool,
+            .default_value = .{ .Bool = false },
+        };
+
+        try cmd.addFlag(helpFlag);
+
+        return cmd;
+    }
+
+    pub fn deinit(self: *Command) void {
+        self.positional_args.deinit(self.allocator);
+
+        self.flags_by_name.deinit();
+        self.flags_by_shortcut.deinit();
+        self.flag_values.deinit();
+
+        var it = self.commands_by_name.iterator();
+        while (it.next()) |entry| {
+            const cmd = entry.value_ptr.*;
+            cmd.deinit();
+        }
+        self.commands_by_name.deinit();
+        self.commands_by_shortcut.deinit();
+        self.command_by_aliases.deinit();
+        self.allocator.destroy(self);
+    }
+
+    pub fn listCommands(self: *const Command) !void {
+        if (self.commands_by_name.count() == 0) {
+            return;
+        }
+
+        try self.writer.print("{s}:\n", .{self.options.commands_title});
+
+        var commands = ArrayList(*Command).empty;
+        defer commands.deinit(self.allocator);
+
+        var it = self.commands_by_name.iterator();
+        while (it.next()) |entry| {
+            try commands.append(self.allocator, entry.value_ptr.*);
+        }
+
+        std.sort.insertion(*Command, commands.items, {}, struct {
+            pub fn lessThan(_: void, a: *Command, b: *Command) bool {
+                return std.mem.order(u8, a.options.name, b.options.name) == .lt;
+            }
+        }.lessThan);
+
+        try printAlignedCommands(commands.items);
+    }
+
+    pub fn listCommandsBySection(self: *const Command) !void {
+        if (self.commands_by_name.count() == 0) {
+            return;
+        }
+
+        // Map to group commands by their section title.
+        var section_map = StringHashMap(ArrayList(*Command)).init(self.allocator);
+        defer {
+            var it = section_map.iterator();
+            while (it.next()) |entry| {
+                entry.value_ptr.*.deinit();
+            }
+            section_map.deinit();
+        }
+
+        var it = self.commands_by_name.iterator();
+        while (it.next()) |entry| {
+            const cmd = entry.value_ptr.*;
+            const section = cmd.options.section_title;
+
+            const list = try section_map.getOrPut(section);
+            if (!list.found_existing) {
+                list.value_ptr.* = ArrayList(*Command).init(self.allocator);
+            }
+            try list.value_ptr.*.append(cmd);
+        }
+
+        var section_keys = ArrayList([]const u8).init(self.allocator);
+        defer section_keys.deinit();
+
+        var key_it = section_map.keyIterator();
+        while (key_it.next()) |key| {
+            try section_keys.append(key.*);
+        }
+
+        std.sort.insertion([]const u8, section_keys.items, {}, struct {
+            pub fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                // Sort by command name, not section title
+                return std.mem.order(u8, a, b) == .lt;
+            }
+        }.lessThan);
+
+        for (section_keys.items) |section_name| {
+            // We know the key exists, so we can use .?
+            const cmds_list = section_map.get(section_name).?;
+
+            try self.writer.print("{s}{s}{s}:\n", .{ styles.BOLD, section_name, styles.RESET });
+
+            std.sort.insertion(*Command, cmds_list.items, {}, struct {
+                pub fn lessThan(_: void, a: *Command, b: *Command) bool {
+                    return std.mem.order(u8, a.options.name, b.options.name) == .lt;
+                }
+            }.lessThan);
+
+            try printAlignedCommands(cmds_list.items);
+            try self.writer.print("\n", .{});
+        }
+    }
+
+    pub fn listFlags(self: *const Command) !void {
+        if (self.flags_by_name.count() == 0) {
+            return;
+        }
+
+        try self.writer.print("Flags:\n", .{});
+
+        // Collect all flags into a list for processing
+        var flags = ArrayList(Flag).empty;
+        defer flags.deinit(self.allocator);
+
+        var it = self.flags_by_name.iterator();
+        while (it.next()) |entry| {
+            const flag = entry.value_ptr.*;
+            if (!flag.hidden) {
+                try flags.append(self.allocator, flag);
+            }
+        }
+
+        try printAlignedFlags(self.writer, flags.items);
+    }
+
+    pub fn listPositionalArgs(self: *const Command) !void {
+        if (self.positional_args.items.len == 0) return;
+
+        try self.writer.print("Arguments:\n", .{});
+
+        var max_width: usize = 0;
+        for (self.positional_args.items) |arg| {
+            const name_len = arg.name.len;
+            if (name_len > max_width) max_width = name_len;
+        }
+
+        for (self.positional_args.items) |arg| {
+            const padding = max_width - arg.name.len;
+            try self.writer.print("  {s}", .{arg.name});
+
+            try self.writer.splatByteAll(' ', padding + 4);
+            try self.writer.print("{s}", .{arg.description});
+            if (arg.required) {
+                try self.writer.print(" (required)", .{});
+            }
+            if (arg.variadic) {
+                try self.writer.print(" (variadic)", .{});
+            }
+            try self.writer.print("\n", .{});
+        }
+
+        try self.writer.print("\n", .{});
+    }
+
+    pub fn listAliases(self: *Command) !void {
+        if (self.options.aliases) |aliases| {
+            if (aliases.len == 0) return;
+            try self.writer.print("Aliases: ", .{});
+            for (aliases, 0..) |alias, i| {
+                try self.writer.print("{s}", .{alias});
+                if (i < aliases.len - 1) {
+                    try self.writer.print(", ", .{});
+                }
+            }
+        }
+    }
+
+    pub fn printUsageLine(self: *Command) !void {
+        var parents = try self.getParents(self.allocator);
+        defer parents.deinit(self.allocator);
+
+        try self.writer.print("Usage: ", .{});
+
+        for (parents.items) |p| {
+            try self.writer.print("{s} ", .{p.options.name});
+        }
+
+        try self.writer.print("{s} [options]", .{self.options.name});
+
+        for (self.positional_args.items) |arg| {
+            if (arg.required) {
+                try self.writer.print(" <{s}>", .{arg.name});
+            } else {
+                try self.writer.print(" [{s}]", .{arg.name});
+            }
+            if (arg.variadic) {
+                try self.writer.print("...", .{});
+            }
+        }
+    }
+
+    pub fn showInfo(self: *const Command) !void {
+        try self.writer.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
+        if (self.options.version) |version| try self.writer.print("{s}v{f}{s}\n", .{ styles.DIM, version, styles.RESET });
+    }
+
+    pub fn showVersion(self: *const Command) !void {
+        if (self.options.version) |version| try self.writer.print("{f}\n", .{version});
+    }
+
+    /// Prints traditional help with commands NOT organized by sections
+    pub fn printHelp(self: *Command) !void {
+        if (!self.options.deprecated) {
+            try self.showInfo();
+            try self.writer.print("\n", .{});
+
+            if (self.options.help) |help| {
+                try self.writer.print("{s}\n\n", .{help});
+            }
+
+            var parents = try self.getParents(self.allocator);
+            defer parents.deinit(self.allocator);
+
+            // Usage
+            if (self.options.usage) |usage| {
+                try self.writer.print("Usage: {s}\n", .{usage});
+            } else {
+                try self.printUsageLine();
+            }
+
+            if (self.options.aliases) |aliases| {
+                if (aliases.len > 0) {
+                    try self.writer.print("\n\n", .{});
+                }
+            }
+
+            // Aliases
+            try self.listAliases();
+
+            // Sub commands
+            try self.writer.print("\n", .{});
+
+            if (self.commands_by_name.count() > 0) try self.writer.print("\n", .{});
+            try self.listCommands();
+            try self.writer.print("\n", .{});
+
+            // Flags
+            try self.listFlags();
+            if (self.flags_by_name.count() > 0) try self.writer.print("\n", .{});
+
+            // Arguments
+            try self.listPositionalArgs();
+
+            const has_subcommands = self.commands_by_name.count() > 0;
+
+            try self.writer.print("Use \"", .{});
+            for (parents.items) |p| {
+                try self.writer.print("{s} ", .{p.options.name});
+            }
+            try self.writer.print("{s}", .{self.options.name});
+
+            if (has_subcommands) {
+                try self.writer.print(" [command]", .{});
+            }
+            try self.writer.print(" --help\" for more information.\n", .{});
+        }
+    }
+
+    /// Prints help with commands organized by sections
+    pub fn printStructuredHelp(self: *Command) !void {
+        if (!self.options.deprecated) {
+            try self.showInfo();
+            try self.writer.print("\n", .{});
+
+            if (self.options.help) |help| {
+                try self.writer.print("{s}\n\n", .{help});
+            }
+
+            const parents = try self.getParents(self.allocator);
+            defer parents.deinit();
+
+            // Usage
+            if (self.options.usage) |usage| {
+                try self.writer.print("Usage: {s}\n", .{usage});
+            } else {
+                try self.printUsageLine();
+            }
+
+            if (self.options.aliases) |aliases| {
+                if (aliases.len > 0) {
+                    try self.writer.print("\n\n", .{});
+                }
+            }
+
+            // Aliases
+            try self.listAliases();
+
+            // Sub commands
+            try self.writer.print("\n", .{});
+
+            if (self.commands_by_name.count() > 0) try self.writer.print("\n", .{});
+            try self.listCommandsBySection();
+            try self.writer.print("\n", .{});
+
+            // Flags
+            try self.listFlags();
+            if (self.flags_by_name.count() > 0) try self.writer.print("\n", .{});
+
+            // Arguments
+            try self.listPositionalArgs();
+
+            const has_subcommands = self.commands_by_name.count() > 0;
+
+            try self.writer.print("Use \"", .{});
+            for (parents.items) |p| {
+                try self.writer.print("{s} ", .{p.options.name});
+            }
+            try self.writer.print("{s}", .{self.options.name});
+
+            if (has_subcommands) {
+                try self.writer.print(" [command]", .{});
+            }
+            try self.writer.print(" --help\" for more information.\n", .{});
+        }
+    }
+
+    pub fn getParents(self: *Command, allocator: Allocator) !ArrayList(*Command) {
+        var list = ArrayList(*Command).empty;
+
+        var cmd = self;
+        while (cmd.parent) |p| {
+            try list.append(allocator, p);
+            cmd = p;
+        }
+
+        std.mem.reverse(*Command, list.items);
+        return list;
+    }
+
+    pub fn addCommand(self: *Command, command: *Command) !void {
+        command.parent = self;
+        try self.commands_by_name.put(command.options.name, command);
+        if (command.options.aliases) |aliases| {
+            for (aliases) |alias| {
+                try self.command_by_aliases.put(alias, command);
+            }
+        }
+        if (command.options.shortcut) |shortcut| try self.commands_by_shortcut.put(shortcut, command);
+    }
+
+    pub fn addCommands(self: *Command, commands: []const *Command) !void {
+        for (commands) |cmd| try self.addCommand(cmd);
+    }
+
+    pub fn addPositionalArg(self: *Command, pos_arg: PositionalArg) !void {
+        if (self.positional_args.items.len > 0) {
+            const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
+            if (last_arg.variadic) {
+                try self.writer.print("Variadic args should only appear at the end.\n", .{});
+                return error.ZliAddPositionalArg;
+            }
+        }
+        try self.positional_args.append(self.allocator, pos_arg);
+    }
+
+    pub fn addFlag(self: *Command, flag: Flag) !void {
+        try self.flags_by_name.put(flag.name, flag);
+        if (flag.shortcut) |shortcut| try self.flags_by_shortcut.put(shortcut, flag);
+
+        try self.flag_values.put(flag.name, flag.default_value);
+    }
+
+    pub fn addFlags(self: *Command, flags: []const Flag) !void {
+        for (flags) |flag| {
+            try self.addFlag(flag);
+        }
+    }
+
+    // cli run --faas pp --me --op=77 -p -abc xxxx yyyy zzzz
+    fn parseArgsAndFlags(self: *Command, args: *ArrayList([]const u8), out_positionals: *ArrayList([]const u8)) !void {
+        while (args.items.len > 0) {
+            const arg = args.items[0];
+
+            if (args.items.len > 0 and
+                (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")))
+            {
+                try self.printHelp();
+                try self.writer.flush();
+                std.process.exit(0);
+            }
+
+            // Handle flags (all the existing parseFlags logic)
+            if (std.mem.startsWith(u8, arg, "--")) {
+                // --flag=value
+                if (std.mem.indexOf(u8, arg[2..], "=")) |eql_index| {
+                    const flag_name = arg[2..][0..eql_index];
+                    const value = arg[2 + eql_index + 1 ..];
+                    const flag = self.findFlag(flag_name);
+                    if (flag == null) {
+                        try self.writer.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        return error.ZliParseArgsAndFlags;
+                    }
+                    const flag_value = flag.?.safeEvaluate(value) catch {
+                        try self.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                        try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                        try self.displayCommandError();
+                        return error.ZliParseArgsAndFlags;
+                    };
+                    try self.flag_values.put(flag.?.name, flag_value);
+                    _ = try popFront([]const u8, args);
+                }
+                // --flag [value] or boolean
+                else {
+                    const flag_name = arg[2..];
+                    const flag = self.findFlag(flag_name);
+                    if (flag == null) {
+                        try self.writer.print("Unknown flag: --{s}\n", .{flag_name});
+                        try self.displayCommandError();
+                        return error.ZliParseArgsAndFlags;
+                    }
+                    const has_next = args.items.len > 1;
+                    const next_value = if (has_next) args.items[1] else null;
+
+                    if (flag.?.type == .Bool) {
+                        if (next_value) |val| {
+                            const is_true = std.mem.eql(u8, val, "true");
+                            const is_false = std.mem.eql(u8, val, "false");
+                            if (is_true or is_false) {
+                                try self.flag_values.put(flag.?.name, .{ .Bool = is_true });
+                                _ = try popFront([]const u8, args); // --flag
+                                _ = try popFront([]const u8, args); // true/false
+                                continue;
+                            }
+                        }
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                        _ = try popFront([]const u8, args);
+                    } else {
+                        if (!has_next) {
+                            try self.writer.print("Missing value for flag --{s}\n", .{flag_name});
+                            try self.displayCommandError();
+                            return error.ZliParseArgsAndFlags;
+                        }
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                            try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            try self.displayCommandError();
+                            return error.ZliParseArgsAndFlags;
+                        };
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // --flag
+                        _ = try popFront([]const u8, args); // value
+                    }
+                }
+            }
+            // -abc short flags
+            else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1 and !std.mem.eql(u8, arg, "-")) {
+                const shortcuts = arg[1..];
+                var j: usize = 0;
+                while (j < shortcuts.len) : (j += 1) {
+                    const shortcut = shortcuts[j .. j + 1];
+                    const flag = self.findFlag(shortcut);
+                    if (flag == null) {
+                        try self.writer.print("Unknown flag: -{c}\n", .{shortcuts[j]});
+                        return error.ZliParseArgsAndFlags;
+                    }
+                    if (flag.?.type == .Bool) {
+                        try self.flag_values.put(flag.?.name, .{ .Bool = true });
+                    } else {
+                        if (j < shortcuts.len - 1) {
+                            try self.writer.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
+                            return error.ZliParseArgsAndFlags;
+                        }
+                        if (args.items.len < 2) {
+                            try self.writer.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
+                            return error.ZliParseArgsAndFlags;
+                        }
+                        const value = args.items[1];
+                        const flag_value = flag.?.safeEvaluate(value) catch {
+                            try self.writer.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
+                            try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            return error.ZliParseArgsAndFlags;
+                        };
+                        try self.flag_values.put(flag.?.name, flag_value);
+                        _ = try popFront([]const u8, args); // value
+                    }
+                }
+                _ = try popFront([]const u8, args); // -abc
+            }
+            // Positional argument
+            else {
+                const val = try popFront([]const u8, args);
+                try out_positionals.append(self.allocator, val);
+            }
+        }
+    }
+
+    fn findFlag(self: *Command, name_or_shortcut: []const u8) ?Flag {
+        if (self.flags_by_name.get(name_or_shortcut)) |flag| return flag;
+        if (self.flags_by_shortcut.get(name_or_shortcut)) |flag| return flag;
+        return null;
+    }
+
+    fn parsePositionalArgs(self: *Command, args: *ArrayList([]const u8)) !void {
+        const expected = self.positional_args.items;
+
+        var required_count: u8 = 0;
+        for (expected) |value| {
+            if (value.required) required_count += 1;
+        }
+
+        if (args.items.len < required_count) {
+            try self.writer.print("Missing {d} positional argument(s).\n\nExpected: ", .{required_count});
+
+            var first = true;
+            for (expected) |arg| {
+                if (arg.required) {
+                    if (!first) try self.writer.print(", ", .{});
+                    try self.writer.print("{s}", .{arg.name});
+                    first = false;
+                }
+            }
+
+            try self.writer.print("\n", .{});
+            try self.displayCommandError();
+            return error.MissingArgs;
+        }
+
+        if (expected.len > 0) {
+            const last_arg = expected[expected.len - 1];
+            if (!last_arg.variadic and args.items.len > expected.len) {
+                try self.writer.print("Too many positional arguments. Expected at most {}.\n", .{expected.len});
+                try self.displayCommandError();
+                return error.TooManyArgs;
+            }
+        }
+    }
+
+    pub fn findCommand(self: *const Command, name_or_shortcut: []const u8) ?*Command {
+        if (self.commands_by_name.get(name_or_shortcut)) |cmd| return cmd;
+        if (self.command_by_aliases.get(name_or_shortcut)) |cmd| return cmd;
+        if (self.commands_by_shortcut.get(name_or_shortcut)) |cmd| return cmd;
+        return null;
+    }
+
+    fn checkDeprecated(self: *const Command) !void {
+        if (self.options.deprecated) {
+            if (self.options.version) |version| {
+                try self.writer.print("'{s}' v{f} is deprecated\n", .{ self.options.name, version });
+            } else {
+                try self.writer.print("'{s}' is deprecated\n", .{self.options.name});
+            }
+
+            if (self.options.replaced_by) |new_cmd_name| {
+                try self.writer.print("\nUse '{s}' instead.\n", .{new_cmd_name});
+            }
+
+            return error.CommandDeprecated;
+        }
+    }
+
+    // Traverse the commands to find the last one in the user input
+    fn findLeaf(self: *Command, args: *ArrayList([]const u8)) !*Command {
+        var current = self;
+
+        while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
+            const name = args.items[0];
+            const maybe_next = current.findCommand(name);
+
+            if (maybe_next == null) {
+                // Check if the current command expects positional arguments
+                const expects_pos_args = current.positional_args.items.len > 0;
+                if (!expects_pos_args) {
+                    try current.writer.print("Unknown command: '{s}'\n", .{name});
+                    try current.displayCommandError();
+                    return error.UnknownCommand;
+                }
+                break;
+            }
+
+            _ = try popFront([]const u8, args);
+            current = maybe_next.?;
+        }
+
+        return current;
+    }
+
+    // Need to make find command, parse flags and parse pos_args execution in parallel
+    /// Executes the command by handling all positional args, subcommands, flags etc...
+    ///
+    /// Caller needs to flush the writer after calling this fn.
+    /// ```zig
+    ///  const root = try cli.build(&writer, allocator);
+    ///  defer root.deinit();
+    ///  try root.execute(.{});
+    ///  try writer.flush();
+    /// ```
+    pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
+        var input = try std.process.argsWithAllocator(self.allocator);
+        defer input.deinit();
+        _ = input.skip(); // skip program name
+
+        var args = ArrayList([]const u8).empty;
+        defer args.deinit(self.allocator);
+        while (input.next()) |arg| {
+            try args.append(self.allocator, arg);
+        }
+
+        var pos_args = ArrayList([]const u8).empty;
+        defer pos_args.deinit(self.allocator);
+
+        var cmd = self.findLeaf(&args) catch |err| {
+            if (err == error.UnknownCommand) {
+                return error.ZliExecute;
+            }
+            return err;
+        };
+
+        cmd.checkDeprecated() catch return error.ZliCheckDeprecated;
+
+        try cmd.parseArgsAndFlags(&args, &pos_args);
+        cmd.parsePositionalArgs(&pos_args) catch return error.ZliParseArgsAndFlags;
+
+        const spinner = try Spinner.init(cmd.writer, cmd.allocator, .{});
+        defer spinner.deinit();
+
+        const ctx = CommandContext{
+            .root = self,
+            .direct_parent = cmd.parent orelse self,
+            .command = cmd,
+            .allocator = cmd.allocator,
+            .positional_args = pos_args.items,
+            .spinner = spinner,
+            .data = context.data,
+        };
+
+        try cmd.execFn(ctx);
+    }
+
+    fn displayCommandError(self: *Command) !void {
+        var parents = try self.getParents(self.allocator);
+        defer parents.deinit(self.allocator);
+
+        try self.writer.print("\nRun: '", .{});
+        for (parents.items) |p| {
+            try self.writer.print("{s} ", .{p.options.name});
+        }
+        try self.writer.print("{s} --help'\n", .{self.options.name});
+    }
+};
+
+// HELPER FUNCTIONS
+
+/// Prints a list of commands aligned to the maximum width of the commands.
+fn printAlignedCommands(commands: []*Command) !void {
+    // Step 1: determine the maximum width of name + shortcut
+    var max_width: usize = 0;
+    for (commands) |cmd| {
+        const name_len = cmd.options.name.len;
+        const shortcut_len = if (cmd.options.shortcut) |s| s.len + 3 else 0; // " ({s})"
+        const total_len = name_len + shortcut_len;
+        if (total_len > max_width) max_width = total_len;
+    }
+
+    // Step 2: print each command with aligned description
+    for (commands) |cmd| {
+        const desc = cmd.options.short_description orelse cmd.options.description;
+
+        // Print name
+        try cmd.writer.print("   {s}", .{cmd.options.name});
+
+        // Print shortcut directly if exists
+        if (cmd.options.shortcut) |s| {
+            try cmd.writer.print(" ({s})", .{s});
+        }
+
+        // Compute padding
+        const name_len = cmd.options.name.len;
+        var shortcut_len: usize = 0;
+        var extra_parens: usize = 0;
+
+        if (cmd.options.shortcut) |s| {
+            shortcut_len = s.len;
+            extra_parens = 3; // space + parentheses
+        }
+
+        const printed_width = name_len + shortcut_len + extra_parens;
+
+        const padding = max_width - printed_width;
+
+        try cmd.writer.splatByteAll(' ', padding + 4);
+
+        try cmd.writer.print("{s}\n", .{desc});
+    }
+}
+
+/// Prints a list of flags aligned to the maximum width of the flags.
+fn printAlignedFlags(writer: *Writer, flags: []const Flag) !void {
+    if (flags.len == 0) return;
+
+    // Calculate maximum width for the flag name + shortcut part
+    var max_width: usize = 0;
+    for (flags) |flag| {
+        var flag_width: usize = 0;
+
+        // Add shortcut width if present: " -x, "
+        if (flag.shortcut) |shortcut| {
+            flag_width += 1 + shortcut.len + 2; // " -" + shortcut + ", "
+        } else {
+            flag_width += 5; // "     " (5 spaces for alignment)
+        }
+
+        // Add flag name width: "--flagname"
+        flag_width += 2 + flag.name.len; // "--" + name
+
+        if (flag_width > max_width) {
+            max_width = flag_width;
+        }
+    }
+
+    // Print each flag with proper alignment
+    for (flags) |flag| {
+        var current_width: usize = 0;
+
+        // Print shortcut if available
+        if (flag.shortcut) |shortcut| {
+            try writer.print(" -{s}, ", .{shortcut});
+            current_width += 1 + shortcut.len + 2;
+        } else {
+            try writer.print("     ", .{});
+            current_width += 5;
+        }
+
+        // Print flag name
+        try writer.print("--{s}", .{flag.name});
+        current_width += 2 + flag.name.len;
+
+        // Calculate and add padding
+        const padding = max_width - current_width;
+        try writer.splatByteAll(' ', padding + 4);
+
+        // Print description and type
+        try writer.print("{s} [{s}]", .{
+            flag.description,
+            @tagName(flag.type),
+        });
+
+        // Print default value
+        switch (flag.type) {
+            .Bool => try writer.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
+            .Int => try writer.print(" (default: {})", .{flag.default_value.Int}),
+            .String => if (flag.default_value.String.len > 0) {
+                try writer.print(" (default: \"{s}\")", .{flag.default_value.String});
+            },
+        }
+        try writer.print("\n", .{});
+    }
+}
+
+/// Pop the first element from the list and shift the rest
+// A more efficient popFront
+fn popFront(comptime T: type, list: *ArrayList(T)) !T {
+    if (list.items.len == 0) return error.Empty;
+    return list.orderedRemove(0);
+}
+-------- FILE: src/lib/builtin.zig --------
+pub const styles = struct {
+    // Reset
+    pub const RESET = "\x1b[0m";
+
+    // Text Styles
+    pub const BOLD = "\x1b[1m";
+    pub const DIM = "\x1b[2m";
+    pub const ITALIC = "\x1b[3m";
+    pub const UNDERLINE = "\x1b[4m";
+    pub const INVERSE = "\x1b[7m";
+    pub const HIDDEN = "\x1b[8m";
+    pub const STRIKETHROUGH = "\x1b[9m";
+
+    // Foreground Colors
+    pub const BLACK = "\x1b[30m";
+    pub const RED = "\x1b[31m";
+    pub const GREEN = "\x1b[32m";
+    pub const YELLOW = "\x1b[33m";
+    pub const BLUE = "\x1b[34m";
+    pub const MAGENTA = "\x1b[35m";
+    pub const CYAN = "\x1b[36m";
+    pub const WHITE = "\x1b[37m";
+
+    // Bright Foreground Colors
+    pub const BRIGHT_BLACK = "\x1b[90m";
+    pub const BRIGHT_RED = "\x1b[91m";
+    pub const BRIGHT_GREEN = "\x1b[92m";
+    pub const BRIGHT_YELLOW = "\x1b[93m";
+    pub const BRIGHT_BLUE = "\x1b[94m";
+    pub const BRIGHT_MAGENTA = "\x1b[95m";
+    pub const BRIGHT_CYAN = "\x1b[96m";
+    pub const BRIGHT_WHITE = "\x1b[97m";
+
+    // Background Colors
+    pub const BG_BLACK = "\x1b[40m";
+    pub const BG_RED = "\x1b[41m";
+    pub const BG_GREEN = "\x1b[42m";
+    pub const BG_YELLOW = "\x1b[43m";
+    pub const BG_BLUE = "\x1b[44m";
+    pub const BG_MAGENTA = "\x1b[45m";
+    pub const BG_CYAN = "\x1b[46m";
+    pub const BG_WHITE = "\x1b[47m";
+
+    // Bright Background Colors
+    pub const BG_BRIGHT_BLACK = "\x1b[100m";
+    pub const BG_BRIGHT_RED = "\x1b[101m";
+    pub const BG_BRIGHT_GREEN = "\x1b[102m";
+    pub const BG_BRIGHT_YELLOW = "\x1b[103m";
+    pub const BG_BRIGHT_BLUE = "\x1b[104m";
+    pub const BG_BRIGHT_MAGENTA = "\x1b[105m";
+    pub const BG_BRIGHT_CYAN = "\x1b[106m";
+    pub const BG_BRIGHT_WHITE = "\x1b[107m";
+};
+-------- FILE: src/lib/spin_v2.zig --------
+const Spinner = @This();
+-------- FILE: src/lib/spin.zig --------
+const std = @import("std");
+const Io = std.Io;
+const Writer = Io.Writer;
+const Allocator = std.mem.Allocator;
+
+const builtin = @import("builtin.zig");
+pub const styles = builtin.styles;
+
+var g_active_spinner: ?*Spinner = null;
+
+/// Progress indicator for long running operations
+const Spinner = @This();
+
+/// The state of an individual line managed by the spinner.
+const LineState = enum {
+    spinning,
+    succeeded,
+    failed,
+    info,
+    /// A static line (e.g., a log) that is not part of the active spinner.
+    preserved,
+};
+
+const SpinnerLine = struct {
+    message: []const u8,
+    state: LineState,
+};
+
+pub const SpinnerStyles = struct {
+    pub const dots = &.{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+    pub const dots2 = &.{ "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" };
+    pub const circle = &.{ "◐", "◓", "◑", "◒" };
+    pub const line = &.{ "-", "\\", "|", "/" };
+    pub const simple_dots_scrolling = &.{ ".  ", ".. ", "...", " ..", "  .", "   " };
+    pub const star = &.{ "✶", "✸", "✹", "✺", "✹", "✷" };
+    pub const clock = &.{ "🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚" };
+    pub const triangle = &.{ "◢", "◣", "◤", "◥" };
+    pub const bouncing_bar = &.{ "[    ]", "[=   ]", "[==  ]", "[=== ]", "[ ===]", "[  ==]", "[   =]", "[    ]", "[   =]", "[  ==]", "[ ===]", "[====]", "[=== ]", "[==  ]", "[=   ]" };
+    pub const grow_vertical = &.{ " ", "▃", "▄", "▅", "▆", "▇", "▆", "▅", "▄", "▃" };
+};
+
+pub const SpinnerOptions = struct {
+    frames: []const []const u8 = SpinnerStyles.dots,
+    interval_ms: u64 = 80,
+};
+
+frames: []const []const u8,
+interval: u64,
+
+lines: std.ArrayList(SpinnerLine),
+is_running: std.atomic.Value(bool),
+thread: ?std.Thread = null,
+frame_index: usize = 0,
+lines_drawn: usize = 0,
+
+writer: *Writer,
+mutex: std.Thread.Mutex = .{},
+allocator: Allocator,
+
+// For signal handling
+prev_handler: std.posix.Sigaction,
+handler_installed: bool,
+
+/// Initialize a new spinner. Does not start it.
+pub fn init(writer: *Writer, allocator: Allocator, options: SpinnerOptions) !*Spinner {
+    const spinner = try allocator.create(Spinner);
+
+    const owned_frames = try allocator.dupe([]const u8, options.frames);
+    errdefer allocator.free(owned_frames);
+
+    spinner.* = Spinner{
+        .allocator = allocator,
+        .writer = writer,
+        .frames = owned_frames,
+        .interval = options.interval_ms * std.time.ns_per_ms,
+        .is_running = std.atomic.Value(bool).init(false),
+        .lines = std.ArrayList(SpinnerLine).empty,
+        .prev_handler = undefined,
+        .handler_installed = false,
+    };
+
+    if (g_active_spinner == null) {
+        g_active_spinner = spinner;
+        var new_action: std.posix.Sigaction = .{
+            .handler = .{ .handler = handleInterrupt },
+            .mask = std.posix.sigemptyset(), // Use std.posix
+            .flags = 0,
+        };
+        std.posix.sigaction(std.posix.SIG.INT, &new_action, &spinner.prev_handler);
+        spinner.handler_installed = true;
+    }
+
+    return spinner;
+}
+
+/// Stops the spinner if it's running and frees allocated memory.
+pub fn deinit(self: *Spinner) void {
+    if (self.handler_installed) {
+        std.posix.sigaction(std.posix.SIG.INT, &self.prev_handler, null);
+        g_active_spinner = null;
+        self.handler_installed = false;
+    }
+    if (self.is_running.load(.monotonic)) {
+        self.stop() catch {};
+    }
+    for (self.lines.items) |line| self.allocator.free(line.message);
+    self.lines.deinit(self.allocator);
+    self.allocator.free(self.frames);
+    self.allocator.destroy(self);
+}
+
+/// Starts the spinner animation in a background thread.
+pub fn start(self: *Spinner, options: SpinnerOptions, comptime format: []const u8, args: anytype) !void {
+    if (self.is_running.load(.monotonic)) return; // Already running
+
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    // Free the old frames and duplicate the new ones
+    self.allocator.free(self.frames);
+    self.frames = try self.allocator.dupe([]const u8, options.frames);
+    self.interval = options.interval_ms * std.time.ns_per_ms;
+
+    // Clear any previous state
+    for (self.lines.items) |line| self.allocator.free(line.message);
+    self.lines.clearRetainingCapacity();
+    self.lines_drawn = 0;
+    self.frame_index = 0;
+
+    const message = try std.fmt.allocPrint(self.allocator, format, args);
+    errdefer self.allocator.free(message);
+
+    try self.lines.append(self.allocator, .{ .message = message, .state = .spinning });
+
+    self.is_running.store(true, .release);
+    self.thread = try std.Thread.spawn(.{}, spinLoop, .{self});
+}
+
+/// Stops the spinner animation and waits for the background thread to exit.
+pub fn stop(self: *Spinner) !void {
+    if (!self.is_running.load(.monotonic)) return;
+
+    self.is_running.store(false, .release);
+
+    if (self.thread) |t| {
+        t.join();
+        self.thread = null;
+    }
+
+    // Final redraw to leave terminal clean
+    try self.render(false);
+    // Show cursor
+    try self.writer.print("\x1b[?25h", .{});
+}
+
+/// Stops the spinner and marks the final step as successful.
+pub fn succeed(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.succeeded, format, args);
+}
+
+/// Stops the spinner and marks the final step as failed.
+pub fn fail(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.failed, format, args);
+}
+
+/// Stops the spinner and marks the final step with an info icon.
+pub fn info(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.info, format, args);
+}
+
+/// Updates the text of the current spinning line.
+pub fn updateText(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    const new_text = try std.fmt.allocPrint(self.allocator, format, args);
+
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    if (self.findLastSpinningLine()) |line| {
+        self.allocator.free(line.message);
+        line.message = new_text;
+    } else {
+        // If no spinning line, just free the new text as there's nothing to update.
+        self.allocator.free(new_text);
+    }
+}
+
+/// Marks the current step as successful and starts a new spinning step.
+pub fn nextStep(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    const new_text = try std.fmt.allocPrint(self.allocator, format, args);
+    errdefer self.allocator.free(new_text);
+
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    if (self.findLastSpinningLine()) |line| {
+        line.state = .succeeded;
+    }
+
+    try self.lines.append(self.allocator, .{ .message = new_text, .state = .spinning });
+}
+
+/// Adds a static, preserved line of text (like a log) above the spinner.
+/// It will be printed on the next frame and will not be cleared.
+pub fn addLine(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    const message = try std.fmt.allocPrint(self.allocator, format, args);
+
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    // To preserve a line, we insert it *before* the first spinning line.
+    var i: usize = 0;
+    while (i < self.lines.items.len) : (i += 1) {
+        if (self.lines.items[i].state == .spinning) break;
+    }
+
+    try self.lines.insert(self.allocator, i, .{ .message = message, .state = .preserved });
+}
+
+fn finalize(self: *Spinner, final_state: LineState, comptime format: []const u8, args: anytype) !void {
+    self.mutex.lock();
+    const new_text = try std.fmt.allocPrint(self.allocator, format, args);
+    if (self.findLastSpinningLine()) |line| {
+        self.allocator.free(line.message);
+        line.message = new_text;
+        line.state = final_state;
+    } else {
+        // If there was no spinning line, create one with the final state.
+        try self.lines.append(self.allocator, .{ .message = new_text, .state = final_state });
+    }
+    self.mutex.unlock();
+    try self.stop();
+}
+
+/// Finds the last line that is currently in a 'spinning' state.
+fn findLastSpinningLine(self: *Spinner) ?*SpinnerLine {
+    // Use a while loop for safe backward iteration.
+    var i = self.lines.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.lines.items[i].state == .spinning) {
+            return &self.lines.items[i];
+        }
+    }
+    return null;
+}
+
+/// Erases the lines drawn in the previous frame.
+fn erase(self: *Spinner) !void {
+    if (self.lines_drawn == 0) return;
+    // Move cursor up N lines
+    try self.writer.print("\r\x1b[{d}A", .{self.lines_drawn});
+    // Clear from cursor to end of screen
+    try self.writer.print("\x1b[J", .{});
+}
+
+/// Renders all lines based on their current state.
+fn render(self: *Spinner, is_spinning: bool) !void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    // Erase previous spinner output
+    try self.erase();
+
+    const lines_to_draw = self.lines.items;
+    var drawn_count: usize = 0;
+
+    for (lines_to_draw) |line| {
+        // The .spinning state is the only one with a dynamic (runtime) prefix.
+        // We must handle it separately to avoid illegal comptime concatenation.
+        if (line.state == .spinning and is_spinning) {
+            const frame = self.frames[self.frame_index];
+            // Use runtime formatting to combine the parts.
+            try self.writer.print("{s}{s}{s} {s}\n", .{ styles.CYAN, frame, styles.RESET, line.message });
+        } else {
+            // All other cases use static prefixes that can be concatenated at compile-time.
+            // This includes the "paused" spinning state.
+            const prefix = switch (line.state) {
+                .spinning => styles.CYAN ++ " " ++ styles.RESET, // Paused state icon
+                .succeeded => styles.GREEN ++ "✔" ++ styles.RESET,
+                .failed => styles.RED ++ "✖" ++ styles.RESET,
+                .info => styles.BLUE ++ "ℹ" ++ styles.RESET,
+                .preserved => styles.DIM ++ "»" ++ styles.RESET,
+            };
+            try self.writer.print("{s} {s}\n", .{ prefix, line.message });
+        }
+        drawn_count += 1;
+    }
+
+    self.lines_drawn = drawn_count;
+
+    if (is_spinning) {
+        self.frame_index = (self.frame_index + 1) % self.frames.len;
+    }
+}
+
+/// The main loop for the background thread.
+fn spinLoop(self: *Spinner) void {
+    // Hide cursor
+    self.writer.print("\x1b[?25l", .{}) catch return;
+    defer self.writer.print("\x1b[?25h", .{}) catch {};
+
+    while (self.is_running.load(.acquire)) {
+        self.render(true) catch {
+            // If rendering fails, stop the spinner to prevent broken output.
+            self.is_running.store(false, .release);
+            break;
+        };
+        std.time.sleep(self.interval);
+        // try std.Thread.yield();
+    }
+}
+
+fn handleInterrupt(signum: c_int) callconv(.c) void {
+    _ = signum; // We know it's SIGINT but don't need to use the value.
+
+    if (g_active_spinner) |spinner| {
+        spinner.stop() catch {};
+    }
+
+    // After cleanup, exit the program with an error code
+    // indicating it was interrupted. 130 is the standard for this.
+    std.process.exit(130);
+}
+-------- FILE: docs.md --------
+# `zli` Documentation
+
+**`zli`**: A blazing-fast, zero-cost CLI framework for Zig.
+
+Welcome to the `zli` documentation! This guide will help you understand how to leverage `zli` to build modular, ergonomic, and high-performance Command Line Interfaces (CLIs) in Zig. Whether you're building a simple tool or a complex application suite, `zli` provides the batteries you need.
+
+Inspired by giants like Cobra (Go) and clap (Rust), `zli` focuses on modularity, type safety, and developer experience.
+
+## Table of Contents
+
+- [`zli` Documentation](#zli-documentation)
+  - [Table of Contents](#table-of-contents)
+  - [🧠 Core Concepts](#-core-concepts)
+    - [Command](#command)
+    - [CommandContext](#commandcontext)
+    - [Flag](#flag)
+    - [PositionalArg](#positionalarg)
+  - [🚀 Getting Started](#-getting-started)
+    - [Installation](#installation)
+    - [Suggested Project Structure](#suggested-project-structure)
+  - [🛠 Building Your CLI: Step-by-Step](#-building-your-cli-step-by-step)
+    - [1. The Main Application Entry Point (`src/main.zig`)](#1-the-main-application-entry-point-srcmainzig)
+    - [2. Defining the Root Command (`src/cli/root.zig`)](#2-defining-the-root-command-srcclirootzig)
+    - [3. Adding a Subcommand (`src/cli/run.zig`)](#3-adding-a-subcommand-srcclirunzig)
+    - [4. Defining and Using Flags](#4-defining-and-using-flags)
+    - [5. Defining and Using Positional Arguments](#5-defining-and-using-positional-arguments)
+    - [6. A Simple Version Subcommand (`src/cli/version.zig`)](#6-a-simple-version-subcommand-srccliversionzig)
+  - [✨ Features in Detail](#-features-in-detail)
+    - [Automatic Help Messages](#automatic-help-messages)
+    - [Version Handling](#version-handling)
+    - [Type-Safe Flag Parsing](#type-safe-flag-parsing)
+    - [Positional Arguments: Required, Optional, Variadic](#positional-arguments-required-optional-variadic)
+    - [Passing Custom Data via `CommandContext`](#passing-custom-data-via-commandcontext)
+    - [Deprecation Notices](#deprecation-notices)
+  - [📝 Best Practices](#-best-practices)
+    - [Modular Command Design](#modular-command-design)
+    - [Error Handling](#error-handling)
+    - [Allocator Management](#allocator-management)
+  - [📖 API Quick Reference](#-api-quick-reference)
+    - [`zli.Command`](#zlicommand)
+    - [`zli.CommandOptions`](#zlicommandoptions)
+    - [`zli.CommandContext`](#zlicommandcontext)
+    - [`zli.Flag`](#zliflag)
+    - [`zli.PositionalArg`](#zlipositionalarg)
+  - [`zli.Spinner`](#zlispinner)
+  - [🤝 Contributing](#-contributing)
+  - [📜 License](#-license)
+
+## 🧠 Core Concepts
+
+Before writing commands, understand the three pillars of `zli`:
+
+### Command
+
+The core unit of behavior in `zli`. Each `Command` represents an action or a group of related actions (subcommands) that your CLI can perform.
+
+- **`name`**: The string used to invoke the command (e.g., `mycli <name>`).
+- **`description`**: A brief explanation of what the command does, shown in help messages.
+- **`shortcut`**: (Optional) A shorter alias for the command name.
+- **`subcommands`**: A `Command` can have child commands, forming a tree structure (e.g., `git remote add <name> <url>`).
+- **`flags`**: Named arguments that modify a command's behavior (e.g., `--verbose`, `-f output.txt`).
+- **`positional arguments`**: Unnamed arguments whose meaning is determined by their position (e.g., `cp <source> <destination>`).
+- **`execFn`**: A Zig function that gets executed when the command is run. This is where your command's logic resides. It receives a `CommandContext`. If a command has subcommands, its `execFn` is typically only called if no subcommands are matched, often used to display help.
+
+### CommandContext
+
+Passed to every `execFn`, the `CommandContext` is your window into the CLI's state during execution. It provides:
+
+- **`.flag("name", T) T`**: Accesses the value of a flag named `"name"`, parsed as type `T` (e.g., `bool`, `i64`, `[]const u8`). This is type-safe.
+- **`.getArg("positional_name") ?[]const u8`**: Retrieves the value of a positional argument by its defined name. Returns `null` if the argument was not provided (and is optional).
+- **`.command: *Command`**: A pointer to the `Command` instance that is currently being executed. Useful for accessing command-specific options or printing help.
+- **`.root: *Command`**: A pointer to the root `Command` of your CLI. Useful for accessing global application settings like version.
+- **`.allocator: std.mem.Allocator`**: The allocator used by `zli` for this command's execution. You can use this for any allocations within your `execFn`.
+- **`.data: ?*anyopaque`**: A user-defined pointer that can be passed during `root.execute()` to share arbitrary data with all command functions.
+- **`.stdin: std.fs.File.Reader`**, **`.stdout: std.fs.File.Writer`**, **`.stderr: std.fs.File.Writer`**: Standard I/O streams for interaction.
+
+### Flag
+
+Flags are named options that modify a command's behavior. `zli` supports common flag patterns:
+
+- Boolean flags: `--verbose`, `-v`
+- Value flags: `--output report.txt`, `--count=10`
+- Shorthand clustering: `-abc` can be equivalent to `-a -b -c` if `a`, `b`, `c` are boolean flags.
+
+Flags are defined with a `zli.Flag` struct:
+
+- **`.name: []const u8`**: Full name of the flag (e.g., "verbose").
+- **`.shortcut: []const u8`**: Single-character shorthand (e.g., "v").
+- **`.description: []const u8`**: Help text for the flag.
+- **`.type: zli.FlagType`**: The expected type of the flag's value (`.Bool`, `.Int`, `.String`).
+- **`.default_value: zli.FlagValue`**: A default value if the flag is not provided by the user.
+
+### PositionalArg
+
+Positional arguments are values passed to a command after its name and flags, identified by their order.
+
+- **`.name: []const u8`**: An internal name for the argument, used to retrieve its value via `ctx.getArg("name")`. This name is also used in help messages.
+- **`.description: []const u8`**: Help text for the argument.
+- **`.required: bool`**: If `true`, `zli` will (or you should check and) error if this argument is missing.
+- **`.variadic: bool`**: If `true`, this argument can accept multiple values (e.g., `mycli process file1 file2 file3...`). A variadic argument must be the last positional argument. When accessed via `ctx.getArg()`, it will return the first value; subsequent values would typically be accessed via `ctx.args()` or a similar mechanism if `zli` directly supports it (check `CommandContext` fields or methods for raw argument access if needed for variadic handling beyond the first element). _Note: Specific handling for multiple variadic values might require accessing `ctx.command.args` or a similar field that holds parsed arguments directly._
+
+## 🚀 Getting Started
+
+### Installation
+
+1.  Fetch `zli` as a dependency using Zig's package manager:
+
+    ```sh
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.2.tar.gz
+    ```
+
+    (Replace `v4.0.2` with the desired version). This adds the dependency to your `build.zig.zon`.
+
+2.  Add `zli` to your executable in `build.zig`:
+
+    ```zig
+    const std = @import("std");
+
+    pub fn build(b: *std.Build) void {
+        const target = b.standardTargetOptions(.{});
+        const optimize = b.standardOptimizeOption(.{});
+
+        const exe = b.addExecutable(.{
+            .name = "your-app",
+            .root_source_file = .{ .path = "src/main.zig" },
+            .target = target,
+            .optimize = optimize,
+        });
+
+        // Add zli dependency
+        const zli_dep = b.dependency("zli", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        exe.root_module.addImport("zli", zli_dep.module("zli"));
+
+        b.installArtifact(exe);
+        // ... rest of your build script
+    }
+    ```
+
+### Suggested Project Structure
+
+A modular structure keeps your CLI codebase organized:
+
+```
+your-app/
+├── build.zig
+├── build.zig.zon
+├── src/
+│   ├── main.zig       # Application entry point
+│   └── cli/           # All CLI command definitions
+│       ├── root.zig   # Root command definition
+│       ├── cmd1.zig   # Definition for `cmd1`
+│       └── cmd2.zig   # Definition for `cmd2`
+```
+
+- Each command typically resides in its own `.zig` file within a `cli` directory.
+- `root.zig` defines the main application command and registers subcommands.
+
+## 🛠 Building Your CLI: Step-by-Step
+
+Let's build a simple CLI called `blitz` with a `run` subcommand.
+
+### 1. The Main Application Entry Point (`src/main.zig`)
+
+This file initializes and executes your root command.
+
+```zig
+// src/main.zig
+const std = @import("std");
+const cli_root = @import("cli/root.zig"); // Your root command definition
+
+pub fn main() !void {
+    // It's good practice to use a general-purpose allocator.
+    // std.heap.page_allocator is also a common choice for CLIs.
+    const allocator = std.heap.smp_allocator;
+
+    // New zig Io as of v0.15.1
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
+    // Build the command structure
+    const root_command = try cli_root.build(&writer, allocator); // pass the writer io
+    defer root_command.deinit();
+
+    // Execute the command based on os.args
+    // You can pass custom data here if needed:
+    // try root_command.execute(.{ .data = &my_custom_data });
+    try root_command.execute(.{});
+
+    try writer.flush(); // Don't forget to flush!
+}
+```
+
+_Key points:_
+
+- An `allocator` is crucial for `zli` as it dynamically allocates memory for commands, flags, and arguments.
+- `cli_root.build()` (which we'll define next) constructs your command tree. you can name build() fn however you want :).
+- `root_command.deinit()` cleans up resources.
+- `root_command.execute()` parses `std.os.args` and runs the appropriate command logic.
+
+### 2. Defining the Root Command (`src/cli/root.zig`)
+
+The root command is the entry point of your CLI application (e.g., `blitz`).
+
+```zig
+// src/cli/root.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+// Forward declare or import subcommand modules
+const run_cmd = @import("run.zig");
+const version_cmd = @import("version.zig");
+
+// This function will be called to construct the root command
+pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, allocator, .{
+        .name = "blitz",
+        .description = "A (fictional) dev toolkit CLI.",
+        .version = "v1.0.0", // Optional: for auto --version flag or manual display
+    },
+    showHelp,
+    ); // Default execFn if no subcommand is matched
+
+    // Register subcommands
+    try root.addCommands(&.{
+        try run_cmd.register(allocator),
+        try version_cmd.register(allocator),
+    });
+
+    return root;
+}
+
+// Default execution function for the root command (e.g., when `blitz` is run without subcommands)
+fn showHelp(ctx: zli.CommandContext) !void {
+    // Display the help message for the current command (root in this case)
+    try ctx.command.printHelp();
+}
+```
+
+_Key points:_
+
+- `zli.Command.init()` creates a new command. It takes an allocator, `zli.CommandOptions`, and an execution function (`execFn`).
+- `CommandOptions` include `.name`, `.description`, and optionally `.version`.
+- `root.addCommands()` attaches subcommands. Each subcommand is also a `*zli.Command`.
+- The `showHelp` function is a typical `execFn` for root commands, displaying usage information.
+
+### 3. Adding a Subcommand (`src/cli/run.zig`)
+
+Let's define the `blitz run` subcommand.
+
+```zig
+// src/cli/run.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+// This function will be called by root.zig to get this command
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
+        .name = "run",
+        .description = "Run a specified workflow",
+    },
+    runWorkflow,
+    ); // The function to execute for `blitz run`
+
+    // We'll add flags and args in the next steps
+    return cmd;
+}
+
+// The execution logic for the `run` command
+fn runWorkflow(ctx: zli.CommandContext) !void {
+    std.debug.print("Executing the run workflow...\n", .{});
+    // Access flags and args using ctx, e.g.:
+    // const verbose = ctx.flag("verbose", bool);
+    // const script_name = ctx.getArg("script") orelse "default.script";
+    // ...
+}
+```
+
+_Key points:_
+
+- Each subcommand module typically exports a `register` (or `build`) function that returns `!*zli.Command`.
+- It defines its own `name`, `description`, and `execFn`.
+
+### 4. Defining and Using Flags
+
+Flags allow users to modify command behavior. Let's add a `--now` flag to the `run` command.
+
+Modify `src/cli/run.zig`:
+
+```zig
+// src/cli/run.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+const now_flag = zli.Flag{
+    .name = "now",
+    .shortcut = "n",
+    .description = "Run the workflow immediately",
+    .type = .Bool, // This is a boolean flag
+    .default_value = .{ .Bool = false },
+};
+
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
+        .name = "run",
+        .description = "Run a specified workflow",
+    }, runWorkflow);
+
+    try cmd.addFlag(now_flag); // Add the flag to the command
+
+    return cmd;
+}
+
+fn runWorkflow(ctx: zli.CommandContext) !void {
+    // Access the flag value type-safely
+    const run_immediately = ctx.flag("now", bool);
+
+    if (run_immediately) {
+        std.debug.print("Executing workflow immediately!\n", .{});
+    } else {
+        std.debug.print("Executing workflow (scheduled).\n", .{});
+    }
+    // ... further logic
+}
+```
+
+_Key points:_
+
+- Define a `zli.Flag` struct specifying its properties.
+- Use `cmd.addFlag()` to associate it with the command.
+- Access the flag's value in `execFn` using `ctx.flag("name", type)`. `zli` handles parsing and type conversion.
+
+Supported flag types:
+
+- `.Bool`: `ctx.flag("myflag", bool)`
+- `.Int`: `ctx.flag("myflag", i64)` (or other integer types, u32 etc... but make sure to handle integer cast issues)
+- `.String`: `ctx.flag("myflag", []const u8)`
+
+### 5. Defining and Using Positional Arguments
+
+Positional arguments are specified by their order. Let's add a required `script` argument and an optional `env` argument to `blitz run`.
+
+Modify `src/cli/run.zig`:
+
+```zig
+// src/cli/run.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+// now_flag definition (as above) ...
+const now_flag = zli.Flag{ /* ... */ };
+
+pub fn register(writer: *Writer,allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, allocator, .{
+        .name = "run",
+        .description = "Run a specified workflow",
+    }, runWorkflow);
+
+    try cmd.addFlag(now_flag);
+
+    // Add positional arguments
+    try cmd.addPositionalArg(.{
+        .name = "script", // Used for help text and ctx.getArg()
+        .description = "The script to execute",
+        .required = true,
+    });
+    try cmd.addPositionalArg(.{
+        .name = "env",
+        .description = "Target environment (e.g., dev, prod)",
+        .required = false, // This argument is optional
+    });
+
+    return cmd;
+}
+
+fn runWorkflow(ctx: zli.CommandContext) !void {
+    const run_immediately = ctx.flag("now", bool);
+
+    // Access positional arguments
+    const script_name = ctx.getArg("script") orelse {
+        // Should not happen if zli enforces required args, but good for clarity
+        // or if you manually handle this logic.
+        // zli's help generation will indicate it's required.
+        // Actual enforcement might be manual or zli might error before execFn.
+        try ctx.command.writer.print("Error: Missing required argument 'script'.\n", .{});
+        try ctx.command.printHelp(.{});
+        return zli.UserError.MissingRequiredArgument; // Or an appropriate error
+    };
+
+    const environment = ctx.getArg("env") orelse "development"; // Default if not provided
+
+    std.debug.print("Running script '{s}' in environment '{s}'. Immediate: {any}\n", .{
+        script_name,
+        environment,
+        run_immediately,
+    });
+}
+```
+
+_Key points:_
+
+- Define positional arguments using `zli.PositionalArg` struct, specifying `.name`, `.description`, and `.required`.
+- Add them with `cmd.addPositionalArg()`. Order matters.
+- Access values with `ctx.getArg("name")`. This returns an `?[]const u8`. Use `orelse` for default values for optional arguments or to handle missing required ones (though `zli` often helps by showing an error/help message before `execFn` if a required arg is missing).
+
+### 6. A Simple Version Subcommand (`src/cli/version.zig`)
+
+It's common to have a command to display the application's version.
+
+```zig
+// src/cli/version.zig
+const std = @import("std");
+const Writer = std.Io.Writer;
+const zli = @import("zli");
+
+pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    return zli.Command.init(writer, allocator, .{
+        .name = "version",
+        .shortcut = "v", // Allows `blitz v`
+        .description = "Show CLI version",
+    }, showVersion);
+}
+
+fn showVersion(ctx: zli.CommandContext) !void {
+    // Access the version string set on the root command
+    if (ctx.root.options.version) |v| {
+        try ctx.command.writer.print("{s}\n", .{v});
+    } else {
+        try ctx.command.writer.print("Version not set.\n", .{});
+    }
+}
+```
+
+This command, when registered in `root.zig`, will allow users to run `blitz version` or `blitz v`.
+
+## ✨ Features in Detail
+
+### Automatic Help Messages
+
+`zli` automatically generates help messages for your CLI and its commands.
+
+- Running a command with `--help` or `-h` (by default) will display its specific help.
+- If a root command's `execFn` (like `showHelp` in our example) calls `ctx.command.printHelp(...)`, it will be shown when the CLI is run without arguments or subcommands.
+- Help messages are neatly formatted, aligning flags, arguments, and descriptions.
+- Customize help output slightly with `zli.PrintHelpOptions` (e.g., `.show_flags_for_subcommands`).
+
+Example help output might look like:
+
+```
+blitz run
+
+Run a specified workflow
+
+Usage:
+  blitz run [flags] <script> [env]
+
+Arguments:
+  script     The script to execute (required)
+  env        Target environment (e.g., dev, prod)
+
+Flags:
+  -h, --help     Show help for command
+  -n, --now      Run the workflow immediately (default: false)
+```
+
+### Version Handling
+
+- **Via Root Command Option**: You can set a `.version` string in `zli.CommandOptions` for your root command:
+
+  ```zig
+  // In cli/root.zig
+  const root = try zli.Command.init(allocator, .{
+      .name = "blitz",
+      .description = "...",
+      .version = "v1.2.3", // Set version here
+  }, showHelp);
+  ```
+
+  `zli` may automatically provide a `--version` flag on the root command that prints this version string. If not, you can easily implement a `version` subcommand (as shown previously) that accesses `ctx.root.options.version`.
+
+- **Via a `version` Subcommand**: As demonstrated in the `src/cli/version.zig` example, creating a dedicated `version` subcommand is a clear and common pattern. This command can then access `ctx.root.options.version`.
+
+### Type-Safe Flag Parsing
+
+`zli` ensures that flag values are parsed into the correct Zig types you specify.
+
+- `ctx.flag("myflag", bool)` returns `bool`.
+- `ctx.flag("myflag", i64)` returns `i64`.
+- `ctx.flag("myflag", []const u8)` returns `[]const u8`.
+
+If a flag value cannot be parsed to the expected type (e.g., "abc" for an `.Int` flag), `zli` will typically handle the error and display a helpful message to the user before your `execFn` is called.
+
+### Positional Arguments: Required, Optional, Variadic
+
+- **`required: true`**: If a positional argument is marked as required, `zli`'s help output will indicate this. The framework may automatically error out if a required argument is missing, or you might need to check for `null` from `ctx.getArg()` and handle it.
+
+  ```zig
+  try cmd.addPositionalArg(.{ .name = "input", .required = true, /* ... */ });
+  const input_file = ctx.getArg("input") orelse return error.MissingInput; // Or handle gracefully
+  ```
+
+- **`required: false` (Optional)**: These can be omitted. `ctx.getArg()` will return `null`. Use `orelse` to provide a default.
+
+  ```zig
+  try cmd.addPositionalArg(.{ .name = "output", .required = false, /* ... */ });
+  const output_file = ctx.getArg("output") orelse "default.out";
+  ```
+
+- **`variadic: true`**: A variadic argument can consume multiple trailing inputs. It must be the last positional argument defined for a command.
+  ```zig
+  try cmd.addPositionalArg(.{
+      .name = "files",
+      .description = "Input files to process",
+      .required = true,
+      .variadic = true,
+  });
+  ```
+  Accessing variadic arguments:
+  - `ctx.getArg("files")` would likely give you the _first_ file.
+  - To get all variadic arguments, you might need to access a field like `ctx.command.parsed_args.positional_values.get("files_variadic_slice_name")` or iterate over `ctx.rawArgs()` after parsing flags. (The exact mechanism for accessing _all_ variadic arguments as a slice needs to be confirmed from `zli`'s specific API for `CommandContext` or parsed arguments. The README indicates support but doesn't detail access).
+    _Developer Note: If `zli` doesn't directly provide a slice for variadic args via `ctx.getArg()`, you might need to iterate over remaining arguments in `ctx.command.args` after known flags and positional args are accounted for, or `zli` might place them under a special key._
+
+### Passing Custom Data via `CommandContext`
+
+You can pass arbitrary application-specific data (like configuration, database connections, etc.) to all your command execution functions.
+
+In `src/main.zig`:
+
+```zig
+// src/main.zig
+// ...
+pub const AppData = struct {
+    config_path: []const u8,
+    verbose_logging: bool,
+};
+
+pub fn main() !void {
+    // ... allocator setup ...
+    var root = try cli.build(&writer, allocator);
+    defer root.deinit();
+
+    var my_app_data = AppData{
+        .config_path = "config.json",
+        .verbose_logging = true,
+    };
+
+    try root.execute(.{ .allocator = allocator, .data = &my_app_data });
+
+    try writer.flush(); // don't forget to flush
+}
+```
+
+In any command's `execFn`:
+
+```zig
+// src/cli/any_command.zig
+// ...
+
+pub const AppData = struct { // redefine it or import it
+    config_path: []const u8,
+    verbose_logging: bool,
+};
+
+fn myCommandFn(ctx: zli.CommandContext) !void {
+    const app_data = ctx.getContextData(AppData); // returns a pointer to app_data
+
+    // Now do something
+    std.debug.print("Config path from custom data: {s}\n", .{app_data.config_path});
+
+    // ...
+}
+```
+
+### Deprecation Notices
+
+`zli` will automatically show a warning when a deprecated command/flag is used.
+
+This might be configured via `zli.CommandOptions` or `zli.Flag`:
+
+```zig
+// Hypothetical example - check zli source for actual API
+const cmd = try zli.Command.init(allocator, .{
+    .name = "oldcmd",
+    .description = "This is an old command.",
+    .deprecated = true, // or .deprecation_message = "Use 'newcmd' instead."
+    // ...
+}, execOldCmd);
+
+const old_flag = zli.Flag{
+    .name = "legacy",
+    .description = "A legacy flag.",
+    .deprecated = true,
+    .replaced_by = "new", // Will display "Use 'new' instead'.
+    // ...
+};
+```
+
+## 📝 Best Practices
+
+### Modular Command Design
+
+- Keep each command's logic self-contained in its own file (e.g., `cli/mycommand.zig`).
+- The `register` or `build` function in each command file should be responsible for initializing the command, its flags, and its positional arguments.
+- The root command module (`cli/root.zig`) then imports and registers these subcommands. This keeps your codebase clean and scalable.
+
+### Error Handling
+
+- Command execution functions (`execFn`) should return `!void` (or another error union type).
+- Propagate errors using `try` or handle them gracefully within the command.
+- `zli` itself will handle parsing errors for flags and arguments.
+- For application-specific errors, you can define custom error sets and return them. `zli`'s `execute` function will propagate these up to `main`.
+
+  ```zig
+  const MyError = error{
+      FileNotFound,
+      NetworkError,
+  };
+
+  fn myExecFn(ctx: zli.CommandContext) MyError!void {
+      if (problem) return MyError.FileNotFound;
+      // ...
+  }
+  ```
+
+### Allocator Management
+
+- Pass an allocator to `zli.Command.init()`. `zli` uses this for its internal allocations.
+- Ensure `Command.deinit()` is called (typically via `defer` on the root command in `main.zig`) to free all resources allocated by `zli` for the command tree.
+- If your command functions perform allocations, use the `ctx.allocator` for consistency, or manage your own allocator lifecycle appropriately.
+
+## 📖 API Quick Reference
+
+This is a brief overview of key `zli` components. For full details, refer to the `zli` source code.
+
+### `zli.Command`
+
+The central struct representing a command.
+
+- `pub fn init(allocator: std.mem.Allocator, options: CommandOptions, execFn: ExecFn) !*Command`
+- `pub fn deinit(self: *Command)`
+- `pub fn addCommand(self: *Command, sub_command: *Command) !void`
+- `pub fn addCommands(self: *Command, sub_commands: []const *Command) !void`
+- `pub fn addFlag(self: *Command, flag: Flag) !void`
+- `pub fn addPositionalArg(self: *Command, arg: PositionalArg) !void`
+- `pub fn execute(self: *Command, options: ExecuteOptions) !void`
+- `pub fn printHelp(self: *const Command, options: PrintHelpOptions) !void`
+- `options: CommandOptions`
+- `flags: std.ArrayList(Flag)`
+- `positional_args: std.ArrayList(PositionalArg)`
+- `sub_commands: std.ArrayList(*Command)`
+- `execFn: ExecFn`
+- `stdout: std.fs.File.Writer` (and `stderr`, `stdin`)
+
+### `zli.CommandOptions`
+
+Configuration for a `Command`.
+
+- `.name: []const u8`
+- `.shortcut: ?[]const u8 = null`
+- `.aliases: ?[]const []const u8 = null`
+- `.description: ?[]const u8 = null`
+- `.version: ?[]const u8 = null`
+- `.deprecated: bool = false` (or similar for deprecation message)
+- ... other options like usage examples, etc.
+
+### `zli.CommandContext`
+
+Provided to `ExecFn`.
+
+- `.allocator: std.mem.Allocator`
+- `.command: *Command` (current command)
+- `.root: *Command` (root command)
+- `.data: ?*anyopaque` (user-provided data)
+- `.writer: std.Io.Writer`
+- `pub fn flag(self: CommandContext, comptime name: []const u8, comptime T: type) T`
+- `pub fn getArg(self: CommandContext, name: []const u8) ?[]const u8`
+
+### `zli.Flag`
+
+Definition for a command-line flag.
+
+- `.name: []const u8`
+- `.shortcut: ?[]const u8 = null`
+- `.description: ?[]const u8 = null`
+- `.type: FlagType` (e.g., `.Bool`, `.Int`, `.String`)
+- `.default_value: ?FlagValue = null`
+- `.deprecated: bool = false` (or similar for deprecation message)
+
+### `zli.PositionalArg`
+
+Definition for a positional argument.
+
+- `.name: []const u8` (for help text and `ctx.getArg()`)
+- `.description: ?[]const u8 = null`
+- `.required: bool = false`
+- `.variadic: bool = false`
+
+## `zli.Spinner`
+
+A powerful and customizable CLI spinner.
+
+It is accessible via `ctx.spinner` and can be used in any command's `execFn`.
+
+here's an example of how it works:
+
+```zig
+
+const std = @import("std");
+const fs = std.fs;
+const Spinner = @import("spinner.zig").Spinner;
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    const file = fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
+    // const spinner = try Spinner.init(&writer, allocator, .{}); // you don't have to do this if you're using zli. It is initialized automatically for you.
+    // defer spinner.deinit();
+
+    try spinner.start("Step 1: Initializing the system...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // This updates the text of the current step
+    try spinner.updateText("Step 1: System initialization is taking a while...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // This completes Step 1 and starts a new step (Step 2)
+    try spinner.nextStep("Step 2: Downloading resources...", .{});
+    std.time.sleep(1 * std.time.ns_per_s);
+
+    // Add a log line. It will appear above the spinner and stay there.
+    try spinner.addLine("Downloaded 'resource_a.zip'", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+    try spinner.addLine("Downloaded 'resource_b.zip'", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // Complete Step 2 and start Step 3
+    try spinner.nextStep("Step 3: Compiling assets...", .{});
+    std.time.sleep(3 * std.time.ns_per_s);
+
+    // Finish the entire process with a success message
+    try spinner.succeed("All steps completed successfully!", .{});
+
+    std.debug.print("\n--- Starting another example (failure case) ---\n\n", .{});
+
+    const spinner2 = try Spinner.init(allocator, .{ .frames = Spinner.SpinnerStyles.line });
+    defer spinner2.deinit();
+
+    try spinner2.start("Task 1: Connecting to server...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    try spinner2.nextStep("Task 2: Authenticating...", .{});
+    std.time.sleep(2 * std.time.ns_per_s);
+
+    // The whole process fails at this step
+    try spinner2.fail("Authentication failed: Invalid credentials.", .{});
+
+    try writer.flush(); // Don't forget to flush!!
+}
+
+```
+
+## 🤝 Contributing
+
+Contributions to `zli` are welcome! Please refer to the main GitHub repository (`https://github.com/xcaeser/zli`) for contribution guidelines, opening issues, or submitting pull requests.
+
+## 📜 License
+
+`zli` is licensed under the MIT License. See the [LICENSE](LICENSE) file in the main repository for full details.
+-------- FILE: CODE_OF_CONDUCT.md --------
+# Code of Conduct
+
+We are committed to fostering a welcoming and inclusive environment. All participants are expected to:
+
+- Be respectful and considerate.
+- Refrain from discriminatory or offensive behavior.
+- Collaborate constructively.
+
+Unacceptable behavior includes:
+
+- Harassment, threats, or personal attacks.
+- Discrimination based on race, gender, religion, etc.
+- Inappropriate language or imagery.
+
+Violations may result in removal from the project. To report issues, please contact the maintainers via GitHub Issues or Discussions.
