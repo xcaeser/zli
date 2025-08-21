@@ -1,4 +1,4 @@
-### 📟 zli v4.0.0
+### 📟 zli v4.0.1
 
 A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
@@ -9,7 +9,7 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.0.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.0.1-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -26,13 +26,13 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v4.0.0 - experimental)
+- Spinners (new in v4.0.1 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.1.tar.gz
 ```
 
 Add to your `build.zig`:
