@@ -1,7 +1,7 @@
 -------- FILE: build.zig.zon --------
 .{
     .name = .zli,
-    .version = "4.0.2",
+    .version = "4.0.3",
     .fingerprint = 0x5b01c9c3a623e52d, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.1",
     .dependencies = .{},
@@ -40,7 +40,7 @@ zig build
 # Run tests
 zig build test
 -------- FILE: README.md --------
-### 📟 zli v4.0.2
+### 📟 zli v4.0.3
 
 A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
@@ -51,7 +51,7 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.0.2-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.0.3-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -68,13 +68,13 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v4.0.2 - experimental)
+- Spinners (new in v4.0.3 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.2.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.3.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -1797,10 +1797,10 @@ Positional arguments are values passed to a command after its name and flags, id
 1.  Fetch `zli` as a dependency using Zig's package manager:
 
     ```sh
-    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.2.tar.gz
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.3.tar.gz
     ```
 
-    (Replace `v4.0.2` with the desired version). This adds the dependency to your `build.zig.zon`.
+    (Replace `v4.0.3` with the desired version). This adds the dependency to your `build.zig.zon`.
 
 2.  Add `zli` to your executable in `build.zig`:
 
