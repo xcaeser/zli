@@ -1,3 +1,8 @@
+//! Zli - Build modular, ergonomic, and high-performance CLIs with ease.
+//! Batteries included.
+//!
+//! For more info, visit: https://github.com/xcaeser/zli
+
 const std = @import("std");
 const Io = std.Io;
 const Writer = Io.Writer;
@@ -9,6 +14,8 @@ const builtin = @import("lib/builtin.zig");
 pub const styles = builtin.styles;
 const Spinner = @import("lib/spin.zig");
 pub const SpinnerStyles = Spinner.SpinnerStyles;
+
+pub const SpinnerV2 = @import("lib/spin_v2.zig");
 
 /// FlagType represents the type of a flag, can be a boolean, integer, or string.
 pub const FlagType = enum {
@@ -66,6 +73,7 @@ pub const CommandContext = struct {
     direct_parent: *Command,
     command: *Command,
     allocator: Allocator,
+    writer: *Writer,
     positional_args: []const []const u8,
     spinner: *Spinner,
     data: ?*anyopaque = null,
@@ -539,6 +547,7 @@ pub const Command = struct {
             const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
             if (last_arg.variadic) {
                 try self.writer.print("Variadic args should only appear at the end.\n", .{});
+                try self.writer.flush();
                 std.process.exit(1);
             }
         }
@@ -644,6 +653,7 @@ pub const Command = struct {
                     const flag = self.findFlag(shortcut);
                     if (flag == null) {
                         try self.writer.print("Unknown flag: -{c}\n", .{shortcuts[j]});
+                        try self.displayCommandError();
                         std.process.exit(1);
                     }
                     if (flag.?.type == .Bool) {
@@ -651,16 +661,19 @@ pub const Command = struct {
                     } else {
                         if (j < shortcuts.len - 1) {
                             try self.writer.print("Flag -{c} ({s}) must be last in group since it expects a value\n", .{ shortcuts[j], flag.?.name });
+                            try self.writer.flush();
                             std.process.exit(1);
                         }
                         if (args.items.len < 2) {
                             try self.writer.print("Missing value for flag -{c} ({s})\n", .{ shortcuts[j], flag.?.name });
+                            try self.writer.flush();
                             std.process.exit(1);
                         }
                         const value = args.items[1];
                         const flag_value = flag.?.safeEvaluate(value) catch {
                             try self.writer.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
                             try self.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
+                            try self.writer.flush();
                             std.process.exit(1);
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
@@ -794,15 +807,22 @@ pub const Command = struct {
 
         var cmd = self.findLeaf(&args) catch |err| {
             if (err == error.UnknownCommand) {
+                try self.writer.flush();
                 std.process.exit(1);
             }
             return err;
         };
 
-        cmd.checkDeprecated() catch std.process.exit(1);
+        cmd.checkDeprecated() catch {
+            try self.writer.flush();
+            std.process.exit(1);
+        };
 
         try cmd.parseArgsAndFlags(&args, &pos_args);
-        cmd.parsePositionalArgs(&pos_args) catch std.process.exit(1);
+        cmd.parsePositionalArgs(&pos_args) catch {
+            try self.writer.flush();
+            std.process.exit(1);
+        };
 
         const spinner = try Spinner.init(cmd.writer, cmd.allocator, .{});
         defer spinner.deinit();
@@ -812,6 +832,7 @@ pub const Command = struct {
             .direct_parent = cmd.parent orelse self,
             .command = cmd,
             .allocator = cmd.allocator,
+            .writer = cmd.writer,
             .positional_args = pos_args.items,
             .spinner = spinner,
             .data = context.data,
@@ -829,6 +850,7 @@ pub const Command = struct {
             try self.writer.print("{s} ", .{p.options.name});
         }
         try self.writer.print("{s} --help'\n", .{self.options.name});
+        try self.writer.flush();
     }
 };
 
