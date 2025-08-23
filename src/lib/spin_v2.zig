@@ -5,28 +5,18 @@ const Io = std.Io;
 const ArrayList = std.ArrayList;
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
+const Thread = std.Thread;
 
 const builtin = @import("builtin.zig");
 pub const styles = builtin.styles;
 
 const Spinner = @This();
 
-/// The state of an individual line managed by the spinner.
-const LineState = enum {
-    spinning,
-    succeeded,
-    failed,
-    info,
-    /// A static line (e.g., a log) that is not part of the active spinner.
-    preserved,
-};
-
-const SpinnerLine = struct {
-    message: []const u8,
-    state: LineState,
-};
-
 pub const SpinnerStyles = union(enum) {
+    pub const line = &.{ "-", "\\", "|", "/" };
+    pub const arc = &.{ "◜", "◠", "◝", "◞", "◡", "◟" };
+    pub const point = &.{ "∙∙∙", "●∙∙", "∙●∙", "∙∙●", "∙∙∙" };
+
     pub const dots = &.{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
     pub const dots2 = &.{ "⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁" };
     pub const dots3 = &.{ "⣼", "⣹", "⢻", "⠿", "⡟", "⣏", "⣧", "⣶" };
@@ -34,27 +24,43 @@ pub const SpinnerStyles = union(enum) {
     pub const dots_8bit = &.{ " ", "⠁", "⠂", "⠃", "⠄", "⠅", "⠆", "⠇", "⡀", "⡁", "⡂", "⡃", "⡄", "⡅", "⡆", "⡇", "⠈", "⠉", "⠊", "⠋", "⠌", "⠍", "⠎", "⠏", "⡈", "⡉", "⡊", "⡋", "⡌", "⡍", "⡎", "⡏", "⠐", "⠑", "⠒", "⠓", "⠔", "⠕", "⠖", "⠗", "⡐", "⡑", "⡒", "⡓", "⡔", "⡕", "⡖", "⡗", "⠘", "⠙", "⠚", "⠛", "⠜", "⠝", "⠞", "⠟", "⡘", "⡙", "⡚", "⡛", "⡜", "⡝", "⡞", "⡟", "⠠", "⠡", "⠢", "⠣", "⠤", "⠥", "⠦", "⠧", "⡠", "⡡", "⡢", "⡣", "⡤", "⡥", "⡦", "⡧", "⠨", "⠩", "⠪", "⠫", "⠬", "⠭", "⠮", "⠯", "⡨", "⡩", "⡪", "⡫", "⡬", "⡭", "⡮", "⡯", "⠰", "⠱", "⠲", "⠳", "⠴", "⠵", "⠶", "⠷", "⡰", "⡱", "⡲", "⡳", "⡴", "⡵", "⡶", "⡷", "⠸", "⠹", "⠺", "⠻", "⠼", "⠽", "⠾", "⠿", "⡸", "⡹", "⡺", "⡻", "⡼", "⡽", "⡾", "⡿", "⢀", "⢁", "⢂", "⢃", "⢄", "⢅", "⢆", "⢇", "⣀", "⣁", "⣂", "⣃", "⣄", "⣅", "⣆", "⣇", "⢈", "⢉", "⢊", "⢋", "⢌", "⢍", "⢎", "⢏", "⣈", "⣉", "⣊", "⣋", "⣌", "⣍", "⣎", "⣏", "⢐", "⢑", "⢒", "⢓", "⢔", "⢕", "⢖", "⢗", "⣐", "⣑", "⣒", "⣓", "⣔", "⣕", "⣖", "⣗", "⢘", "⢙", "⢚", "⢛", "⢜", "⢝", "⢞", "⢟", "⣘", "⣙", "⣚", "⣛", "⣜", "⣝", "⣞", "⣟", "⢠", "⢡", "⢢", "⢣", "⢤", "⢥", "⢦", "⢧", "⣠", "⣡", "⣢", "⣣", "⣤", "⣥", "⣦", "⣧", "⢨", "⢩", "⢪", "⢫", "⢬", "⢭", "⢮", "⢯", "⣨", "⣩", "⣪", "⣫", "⣬", "⣭", "⣮", "⣯", "⢰", "⢱", "⢲", "⢳", "⢴", "⢵", "⢶", "⢷", "⣰", "⣱", "⣲", "⣳", "⣴", "⣵", "⣶", "⣷", "⢸", "⢹", "⢺", "⢻", "⢼", "⢽", "⢾", "⢿", "⣸", "⣹", "⣺", "⣻", "⣼", "⣽", "⣾", "⣿" };
     pub const sand = &.{ "⠁", "⠂", "⠄", "⡀", "⡈", "⡐", "⡠", "⣀", "⣁", "⣂", "⣄", "⣌", "⣔", "⣤", "⣥", "⣦", "⣮", "⣶", "⣷", "⣿", "⡿", "⠿", "⢟", "⠟", "⡛", "⠛", "⠫", "⢋", "⠋", "⠍", "⡉", "⠉", "⠑", "⠡", "⢁" };
     pub const dots_scrolling = &.{ ".  ", ".. ", "...", " ..", "  .", "   " };
-    pub const box_bounce = &.{ "▌", "▀", "▐", "▄" };
-    pub const noise = &.{ "▓", "▒", "░" };
-    pub const grow_vertical = &.{ " ", "▃", "▄", "▅", "▆", "▇", "▆", "▅", "▄", "▃" };
+    pub const flip = &.{ "_", "_", "_", "-", "`", "`", "'", "´", "-", "_", "_", "_" };
+
     pub const aesthetic = &.{ "▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰", "▰▱▱▱▱▱▱" };
     pub const bouncing_ball = &.{ "( ●    )", "(  ●   )", "(   ●  )", "(    ● )", "(     ●)", "(    ● )", "(   ●  )", "(  ●   )", "( ●    )", "(●     )" };
     pub const bouncing_bar = &.{ "[    ]", "[=   ]", "[==  ]", "[=== ]", "[ ===]", "[  ==]", "[   =]", "[    ]", "[   =]", "[  ==]", "[ ===]", "[====]", "[=== ]", "[==  ]", "[=   ]" };
 
-    pub const line = &.{ "-", "\\", "|", "/" };
-    pub const arc = &.{ "◜", "◠", "◝", "◞", "◡", "◟" };
-    pub const point = &.{ "∙∙∙", "●∙∙", "∙●∙", "∙∙●", "∙∙∙" };
-
     pub const toggle = &.{ "◍", "◌" };
-    pub const circle_halvess = &.{ "◐", "◓", "◑", "◒" };
+    pub const toggle2 = &.{ "□", "■" };
+    pub const noise = &.{ "▓", "▒", "░" };
+    pub const hamburger = &.{ "☱", "☲", "☴" };
     pub const triangle = &.{ "◢", "◣", "◤", "◥" };
+    pub const box_bounce = &.{ "▌", "▀", "▐", "▄" };
+    pub const circle_halvess = &.{ "◐", "◓", "◑", "◒" };
     pub const star = &.{ "✶", "✸", "✹", "✺", "✹", "✷" };
+    pub const grow_vertical = &.{ " ", "▃", "▄", "▅", "▆", "▇", "▆", "▅", "▄", "▃" };
 
     pub const earth = &.{ "🌍", "🌎", "🌏" };
     pub const monkey = &.{ "🙈", "🙈", "🙉", "🙊" };
+    pub const speaker = &.{ "🔈", "🔉", "🔊", "🔉" };
     pub const moon = &.{ "🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘" };
+    pub const mindblown = &.{ "😐", "😐", "😮", "😮", "😦", "😦", "😧", "😧", "🤯", "💥", "✨" };
     pub const clock = &.{ "🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚" };
     pub const weather = &.{ "☀️ ", "☀️ ", "☀️ ", "🌤 ", "⛅️ ", "🌥 ", "☁️ ", "🌧 ", "🌨 ", "🌧 ", "🌨 ", "🌧 ", "🌨 ", "⛈ ", "🌨 ", "🌧 ", "🌨 ", "☁️ ", "🌥 ", "⛅️ ", "🌤 ", "☀️ ", "☀️ " };
+};
+
+/// The state of an individual line managed by the spinner.
+const State = enum {
+    success,
+    fail,
+    info,
+    /// A static line (e.g., a log) that is not part of the active spinner.
+    preserve,
+};
+
+const Message = struct {
+    text: []const u8,
+    state: State,
 };
 
 pub const SpinnerOptions = struct {
@@ -62,44 +68,137 @@ pub const SpinnerOptions = struct {
     refresh_rate_ms: u64 = 80,
 };
 
-options: SpinnerOptions,
-lines: ArrayList(SpinnerLine),
+frames: []const []const u8,
+refresh_rate_ms: u64,
+message: []const u8,
+is_spinning: std.atomic.Value(bool),
 allocator: Allocator,
 writer: *Writer,
+thread: ?Thread = null,
+mutex: Thread.Mutex = .{},
 
+/// Initiate a new Spinner instance.
+///
+/// If no options are provided `init(..., .{})`, the default spinner will be dots with a 80ms refresh rate.
+///
+/// Use `Spinner.SpinnerStyles.[option]` or pass in `.{ .frames = " []const []const u8 " }` for a custom style.
+///
 pub fn init(writer: *Writer, allocator: Allocator, options: SpinnerOptions) Spinner {
     return Spinner{
         .writer = writer,
         .allocator = allocator,
-        .lines = ArrayList(SpinnerLine).empty,
-        .options = options,
+        .is_spinning = std.atomic.Value(bool).init(false),
+        .refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms,
+        .frames = options.frames,
+        .message = "",
     };
 }
 
 pub fn deinit(self: *Spinner) void {
-    self.lines.deinit(self.allocator);
-}
-
-pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
-    const writer = self.writer;
-    const allocator = self.allocator;
-    const frames = self.options.frames;
-
-    const interval = self.options.refresh_rate_ms * std.time.ns_per_ms;
-
-    var frame_index: usize = 0;
-
-    while (frame_index < frames.len) : (frame_index = (frame_index + 1) % frames.len) {
-        const frame = frames[frame_index];
-        const message = try std.fmt.allocPrint(allocator, format, args);
-        defer self.allocator.free(message);
-        try writer.print("{s} {s}\n", .{ frame, message });
-        std.Thread.sleep(interval);
-        try self.render();
+    self.stop();
+    if (self.message.len > 0) {
+        self.allocator.free(self.message);
     }
 }
 
-fn render(self: *Spinner) !void {
-    try self.writer.print("\r\x1b[1A", .{});
-    try self.writer.print("\x1b[J", .{});
+pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    if (self.is_spinning.load(.monotonic)) return; // already running
+
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    self.is_spinning.store(true, .release);
+
+    if (self.message.len > 0) {
+        self.allocator.free(self.message);
+    }
+
+    self.message = try std.fmt.allocPrint(self.allocator, format, args);
+
+    self.thread = try Thread.spawn(.{}, run, .{ self, true });
+}
+
+pub fn stop(self: *Spinner) void {
+    if (!self.is_spinning.load(.monotonic)) return;
+    self.is_spinning.store(false, .release);
+
+    if (self.thread) |t| {
+        t.join();
+        self.thread = null;
+    }
+}
+
+pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
+    self.frames = options.frames;
+    self.refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms;
+}
+
+pub fn updateMessage(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    if (self.message.len > 0) {
+        self.allocator.free(self.message);
+    }
+    self.message = try std.fmt.allocPrint(self.allocator, format, args);
+}
+
+pub fn succeed(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.success, format, args);
+}
+
+pub fn fail(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.fail, format, args);
+}
+
+pub fn info(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.info, format, args);
+}
+
+pub fn preserve(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.finalize(.preserve, format, args);
+}
+
+fn finalize(self: *Spinner, state: State, comptime format: []const u8, args: anytype) !void {
+    if (!self.is_spinning.load(.monotonic)) return;
+
+    self.stop();
+
+    const ticker = switch (state) {
+        .success => styles.GREEN ++ "✔" ++ styles.RESET,
+        .fail => styles.RED ++ "✖" ++ styles.RESET,
+        .info => styles.BLUE ++ "i" ++ styles.RESET,
+        .preserve => styles.DIM ++ "»" ++ styles.RESET,
+    };
+
+    if (self.message.len > 0) {
+        self.allocator.free(self.message);
+    }
+    self.message = try std.fmt.allocPrint(self.allocator, format, args);
+
+    self.writer.print("\r\x1b[2K", .{}) catch {};
+
+    try self.writer.print("{s} {s}", .{ ticker, self.message });
+
+    self.allocator.free(self.message);
+    self.message = "";
+}
+
+fn run(self: *Spinner, loop: bool) void {
+    if (loop) {
+        self.spinLoop();
+    } else {
+        self.writer.print("{s}", .{self.message}) catch {};
+    }
+}
+
+fn spinLoop(self: *Spinner) void {
+    var index: usize = 0;
+    while (self.is_spinning.load(.acquire)) {
+        self.writer.print("\r\x1b[2K", .{}) catch {};
+
+        self.writer.print("{s} {s}", .{ self.frames[index], self.message }) catch {};
+
+        index = (index + 1) % self.frames.len;
+        Thread.sleep(self.refresh_rate_ms);
+    }
+    self.writer.print("\r\x1b[2K", .{}) catch {}; // Clear the line one final time on exit
+    // self.writer.print("\n", .{}) catch {};
 }
