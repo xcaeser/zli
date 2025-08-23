@@ -12,10 +12,9 @@ const ArrayList = std.ArrayList;
 
 const builtin = @import("lib/builtin.zig");
 pub const styles = builtin.styles;
-const Spinner = @import("lib/spin.zig");
-pub const SpinnerStyles = Spinner.SpinnerStyles;
 
-pub const SpinnerV2 = @import("lib/spin_v2.zig");
+pub const Spinner = @import("lib/spinner.zig");
+pub const SpinnerStyles = Spinner.SpinnerStyles;
 
 /// FlagType represents the type of a flag, can be a boolean, integer, or string.
 pub const FlagType = enum {
@@ -824,7 +823,7 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
-        const spinner = try Spinner.init(cmd.writer, cmd.allocator, .{});
+        var spinner = Spinner.init(cmd.writer, cmd.allocator, .{});
         defer spinner.deinit();
 
         const ctx = CommandContext{
@@ -834,7 +833,7 @@ pub const Command = struct {
             .allocator = cmd.allocator,
             .writer = cmd.writer,
             .positional_args = pos_args.items,
-            .spinner = spinner,
+            .spinner = &spinner,
             .data = context.data,
         };
 
