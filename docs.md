@@ -106,10 +106,10 @@ Positional arguments are values passed to a command after its name and flags, id
 1.  Fetch `zli` as a dependency using Zig's package manager:
 
     ```sh
-    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.3.tar.gz
+    zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.1.0.tar.gz
     ```
 
-    (Replace `v4.0.3` with the desired version). This adds the dependency to your `build.zig.zon`.
+    (Replace `v4.1.0` with the desired version). This adds the dependency to your `build.zig.zon`.
 
 2.  Add `zli` to your executable in `build.zig`:
 
@@ -727,25 +727,18 @@ pub fn main() !void {
     std.time.sleep(2 * std.time.ns_per_s);
 
     // This updates the text of the current step
-    try spinner.updateText("Step 1: System initialization is taking a while...", .{});
+    try spinner.updateMessage("Step 1: System initialization is taking a while...", .{});
     std.time.sleep(2 * std.time.ns_per_s);
 
-    // This completes Step 1 and starts a new step (Step 2)
-    try spinner.nextStep("Step 2: Downloading resources...", .{});
-    std.time.sleep(1 * std.time.ns_per_s);
+    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.hamburger, .refresh_rate_ms = 80 });
+    try spinner.start("Step 2", .{});
+    std.Thread.sleep(2000 * std.time.ns_per_ms);
 
-    // Add a log line. It will appear above the spinner and stay there.
-    try spinner.addLine("Downloaded 'resource_a.zip'", .{});
-    std.time.sleep(2 * std.time.ns_per_s);
-    try spinner.addLine("Downloaded 'resource_b.zip'", .{});
-    std.time.sleep(2 * std.time.ns_per_s);
+    std.Thread.sleep(1000 * std.time.ns_per_ms);
+    try spinner.updateMessage("Calculating things", .{});
+    const i = work();
 
-    // Complete Step 2 and start Step 3
-    try spinner.nextStep("Step 3: Compiling assets...", .{});
-    std.time.sleep(3 * std.time.ns_per_s);
-
-    // Finish the entire process with a success message
-    try spinner.succeed("All steps completed successfully!", .{});
+    try spinner.info("Step 2 info: {d}", .{i});
 
     std.debug.print("\n--- Starting another example (failure case) ---\n\n", .{});
 
@@ -753,9 +746,9 @@ pub fn main() !void {
     defer spinner2.deinit();
 
     try spinner2.start("Task 1: Connecting to server...", .{});
-    std.time.sleep(2 * std.time.ns_per_s);
+    std.time.sleep(2 * std.time.ns_per_s);s
 
-    try spinner2.nextStep("Task 2: Authenticating...", .{});
+    try spinner2.updateMessage("Task 2: Authenticating...", .{});
     std.time.sleep(2 * std.time.ns_per_s);
 
     // The whole process fails at this step

@@ -1,4 +1,4 @@
-### 📟 zli v4.0.3
+### 📟 zli v4.1.0
 
 A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
@@ -9,7 +9,7 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.0.3-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.1.0-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -26,13 +26,13 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v4.0.3 - experimental)
+- Spinners (new in v4.1.0 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.0.3.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.1.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -194,18 +194,18 @@ const zli = @import("zli");
 
 pub fn run(ctx: zli.CommandContext) !void {
     // Step 1: Start the first task.
-    try ctx.spinner.start(.{}, "Connecting to vault...", .{});
+    try ctx.spinner.start("Connecting to vault...", .{});
     doSomething();
-    try ctx.spinner.updateText("Step 2: Authentication is taking a moment...", .{});
+    try ctx.spinner.updateMessage("Step 2: Authentication is taking a moment...", .{});
     doSomething();
 
     // Step 2: Mark Step 1 as complete and start the next task.
     const key = ctx.getArg("key") orelse "b";
-    try ctx.spinner.nextStep("Retrieving key '{s}'...", .{key});
+    try ctx.spinner.updateMessage("Retrieving key '{s}'...", .{key});
     doSomething();
 
     // Step 3: Mark Step 2 as complete and start the final task.
-    try ctx.spinner.nextStep("Decrypting value...", .{});
+    try ctx.spinner.updateMessage("Decrypting value...", .{});
     const value = try zv.getFromVault(key);
     const fl = ctx.flag("now", bool);
     doSomething();
