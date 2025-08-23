@@ -149,7 +149,7 @@ fn run(ctx: zli.CommandContext) !void {
     const now = ctx.flag("now", bool); // type-safe flag access
 
     const script = ctx.getArg("script") orelse {
-        try ctx.command.writer.print("Missing script arg\n", .{});
+        try ctx.writer.print("Missing script arg\n", .{});
         return;
     };
     const env = ctx.getArg("env") orelse "default";

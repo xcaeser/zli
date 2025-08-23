@@ -388,7 +388,7 @@ fn runWorkflow(ctx: zli.CommandContext) !void {
         // or if you manually handle this logic.
         // zli's help generation will indicate it's required.
         // Actual enforcement might be manual or zli might error before execFn.
-        try ctx.command.writer.print("Error: Missing required argument 'script'.\n", .{});
+        try ctx.writer.print("Error: Missing required argument 'script'.\n", .{});
         try ctx.command.printHelp(.{});
         return zli.UserError.MissingRequiredArgument; // Or an appropriate error
     };
@@ -430,9 +430,9 @@ pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
 fn showVersion(ctx: zli.CommandContext) !void {
     // Access the version string set on the root command
     if (ctx.root.options.version) |v| {
-        try ctx.command.writer.print("{s}\n", .{v});
+        try ctx.writer.print("{s}\n", .{v});
     } else {
-        try ctx.command.writer.print("Version not set.\n", .{});
+        try ctx.writer.print("Version not set.\n", .{});
     }
 }
 ```
