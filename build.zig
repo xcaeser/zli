@@ -22,4 +22,16 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_test.step);
+
+    const docs_step = b.step("docs", "Build the zli library docs");
+    const docs_obj = b.addObject(.{
+        .name = "zli",
+        .root_module = mod,
+    });
+    const docs = docs_obj.getEmittedDocs();
+    docs_step.dependOn(&b.addInstallDirectory(.{
+        .source_dir = docs,
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    }).step);
 }
