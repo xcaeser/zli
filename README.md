@@ -4,7 +4,7 @@ A blazing-fast CLI framework for Zig.
 
 Build modular, ergonomic, and high-performance CLIs with ease.
 
-Batteries included.
+Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
