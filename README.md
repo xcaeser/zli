@@ -1,6 +1,8 @@
 ### 📟 zli v4.1.1
 
-A blazing-fast CLI framework for Zig. The last one you will ever use to build modular, ergonomic, and high-performance CLIs with ease.
+A blazing-fast CLI framework for Zig.
+
+Build modular, ergonomic, and high-performance CLIs with ease.
 
 Batteries included.
 
@@ -42,9 +44,10 @@ your-app/
 ├── src/
 │   ├── main.zig
 │   └── cli/
-│       ├── root.zig
-│       ├── run.zig
-│       └── version.zig
+│       ├── root.zig // zli entrypoint
+│       ├── run.zig  // subcommand 1
+│       └── version.zig // subcommand 1
+        ... // subcommand of subcommands, go nuts
 ```
 
 - Each command is in its own file
