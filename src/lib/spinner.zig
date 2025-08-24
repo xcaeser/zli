@@ -68,6 +68,7 @@ frames: []const []const u8,
 refresh_rate_ms: u64,
 message: []const u8,
 is_spinning: std.atomic.Value(bool),
+frame_index: std.atomic.Value(usize),
 allocator: Allocator,
 writer: *Writer,
 thread: ?Thread = null,
@@ -84,6 +85,7 @@ pub fn init(writer: *Writer, allocator: Allocator, options: SpinnerOptions) Spin
         .writer = writer,
         .allocator = allocator,
         .is_spinning = std.atomic.Value(bool).init(false),
+        .frame_index = std.atomic.Value(usize).init(0),
         .refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms,
         .frames = options.frames,
         .message = "",
@@ -103,7 +105,7 @@ pub fn print(self: *Spinner, comptime format: []const u8, args: anytype) !void {
 }
 
 pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
-    if (self.is_spinning.load(.monotonic)) return; // already running
+    // if (self.is_spinning.load(.monotonic)) return; // already running
 
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -130,6 +132,11 @@ pub fn stop(self: *Spinner) void {
 }
 
 pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    self.frame_index.store(0, .release);
+
     self.frames = options.frames;
     self.refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms;
 }
@@ -183,13 +190,14 @@ fn finalize(self: *Spinner, state: State, comptime format: []const u8, args: any
 }
 
 fn spinLoop(self: *Spinner) void {
-    var index: usize = 0;
     while (self.is_spinning.load(.acquire)) {
         self.writer.print("\r\x1b[2K", .{}) catch {};
 
+        const index = self.frame_index.load(.acquire);
         self.writer.print("{s}{s}", .{ self.frames[index], self.message }) catch {};
 
-        index = (index + 1) % self.frames.len;
+        self.frame_index.store((index + 1) % self.frames.len, .release);
+
         Thread.sleep(self.refresh_rate_ms);
     }
     self.writer.print("\r\x1b[2K", .{}) catch {}; // Clear the line one final time on exit

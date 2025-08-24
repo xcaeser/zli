@@ -1,4 +1,4 @@
-### 📟 zli v4.1.0
+### 📟 zli v4.1.1
 
 A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
 
@@ -9,7 +9,7 @@ All batteries included.
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.1.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.1.1-green)](https://github.com/xcaeser/zli/releases)
 
 > [!TIP]
 > 🧱 Each command is modular and self-contained.
@@ -26,13 +26,13 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v4.1.0 - experimental)
+- Spinners (new in v4.1.1 - experimental)
 - Usage hints, context-aware
 
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.1.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.1.1.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -186,32 +186,59 @@ fn show(ctx: zli.CommandContext) !void {
 }
 ```
 
-### Spinners example - experimental
+### Spinners example
+
+Funtions are
+
+- `spinner.start`: to add a new line. You can update message, and spinner style.
+- `spinner.updateStyle`: to update the spinner style
+- `spinner.updateMessage`: to update text of a running spinner
+- `spinner.succeed`, `fail`, `info`, `preserve`: mandatory to complete a line you started. each `spinner.start` needs a `spinner.succeed`, `fail` etc.. spinner after this action is done for that specific line
+- Recommendation: use `spinner.print` instead of your own `writer.print` to not have non-displayed messages as spinner works on its own thread.
 
 ```zig
 const std = @import("std");
 const zli = @import("zli");
 
 pub fn run(ctx: zli.CommandContext) !void {
-    // Step 1: Start the first task.
-    try ctx.spinner.start("Connecting to vault...", .{});
-    doSomething();
-    try ctx.spinner.updateMessage("Step 2: Authentication is taking a moment...", .{});
-    doSomething();
+    var spinner = ctx.spinner;
+    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.earth, .refresh_rate_ms = 150 }); // many styles available
 
-    // Step 2: Mark Step 1 as complete and start the next task.
-    const key = ctx.getArg("key") orelse "b";
-    try ctx.spinner.updateMessage("Retrieving key '{s}'...", .{key});
-    doSomething();
+    // Step 1
+    try spinner.start("Step 1", .{}); // New line
+    std.Thread.sleep(2000 * std.time.ns_per_ms);
 
-    // Step 3: Mark Step 2 as complete and start the final task.
-    try ctx.spinner.updateMessage("Decrypting value...", .{});
-    const value = try zv.getFromVault(key);
-    const fl = ctx.flag("now", bool);
-    doSomething();
+    try spinner.succeed("Step 1 success", .{}); // each start must be closed with succeed, fail, info, preserve
 
-    // Step 4: Mark the final task as successful and stop.
-    try ctx.spinner.succeed("Success! Found value: {s} (flag: {any})", .{ value, fl });
+    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.weather, .refresh_rate_ms = 150 }); // many styles available
+
+    // Step 2
+    try spinner.start("Step 2", .{}); // New line
+    std.Thread.sleep(3000 * std.time.ns_per_ms);
+
+    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.dots, .refresh_rate_ms = 150 }); // many styles available
+    try spinner.updateMessage("Step 2: Calculating things...", .{}); // update the text of step 2
+
+    const i = work(); // do some work
+
+    try spinner.info("Step 2 info: {d}", .{i});
+
+    // Step 3
+    try spinner.start("Step 3", .{});
+    std.Thread.sleep(2000 * std.time.ns_per_ms);
+
+    try spinner.fail("Step 3 fail", .{});
+
+    try spinner.print("Finish\n", .{}); // instead of using ctx.writer or another writer to avoid concurrency issues
+}
+
+fn work() u128 {
+    var i: u128 = 1;
+    for (0..100000000) |t| {
+        i = (t + i);
+    }
+
+    return i;
 }
 ```
 
