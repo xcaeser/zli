@@ -1,9 +1,8 @@
 ### 📟 zli v4.1.1
 
-A **blazing-fast**, zero-cost CLI framework for Zig. The last one you will ever use.
+A blazing-fast CLI framework for Zig. The last one you will ever use to build modular, ergonomic, and high-performance CLIs with ease.
 
-Build modular, ergonomic, and high-performance CLIs with ease.
-All batteries included.
+Batteries included.
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
@@ -11,14 +10,7 @@ All batteries included.
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 [![Version](https://img.shields.io/badge/ZLI-v4.1.1-green)](https://github.com/xcaeser/zli/releases)
 
-> [!TIP]
-> 🧱 Each command is modular and self-contained.
-
-## 📚 Documentation
-
-See [docs.md](docs.md) for full usage, examples, and internals.
-
-## 🚀 Highlights
+## 🚀 Features
 
 - Modular commands & subcommands
 - Fast flag parsing (`--flag`, `--flag=value`, shorthand `-abc`)
@@ -26,7 +18,7 @@ See [docs.md](docs.md) for full usage, examples, and internals.
 - Named positional arguments with `required`, `optional`, `variadic`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
-- Spinners (new in v4.1.1 - experimental)
+- Spinners for a more interactive experience
 - Usage hints, context-aware
 
 ## 📦 Installation
@@ -42,7 +34,7 @@ const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize })
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
-## 🗂 Suggested Structure
+## 🗂 Recommended Structure (but you can do what you want)
 
 ```
 your-app/
@@ -60,6 +52,8 @@ your-app/
 - `root.zig` is the entry point
 
 ## 🧪 Example
+
+### Your program
 
 ```zig
 // src/main.zig
@@ -81,6 +75,8 @@ pub fn main() !void {
     try writer.flush(); // Don't forget to flush!
 }
 ```
+
+### Root command - entrypoint
 
 ```zig
 // src/cli/root.zig
@@ -109,6 +105,8 @@ fn showHelp(ctx: zli.CommandContext) !void {
     try ctx.command.printHelp();
 }
 ```
+
+### Run subcommand
 
 ```zig
 // src/cli/run.zig
@@ -167,6 +165,8 @@ fn run(ctx: zli.CommandContext) !void {
 };
 ```
 
+### Version subcommand
+
 ```zig
 // src/cli/version.zig
 const std = @import("std");
@@ -188,13 +188,13 @@ fn show(ctx: zli.CommandContext) !void {
 
 ### Spinners example
 
-Funtions are
+Available funtions:
 
-- `spinner.start`: to add a new line. You can update message, and spinner style.
+- `spinner.start`: to add a new line. sets the spinner to running
 - `spinner.updateStyle`: to update the spinner style
 - `spinner.updateMessage`: to update text of a running spinner
 - `spinner.succeed`, `fail`, `info`, `preserve`: mandatory to complete a line you started. each `spinner.start` needs a `spinner.succeed`, `fail` etc.. spinner after this action is done for that specific line
-- Recommendation: use `spinner.print` instead of your own `writer.print` to not have non-displayed messages as spinner works on its own thread.
+- Recommendation: use `spinner.print` instead of your own `writer.print` to not have non-displayed messages as spinner works on its own thread
 
 ```zig
 const std = @import("std");
@@ -257,6 +257,10 @@ fn work() u128 {
 - [x] Clean usage output like Cobra
 - [x] Spinners and loading state (very powerful)
 - [ ] Persistent flags
+
+## 📚 Documentation
+
+See [docs.md](docs.md) for full usage, examples, and internals.
 
 ## 📝 License
 
