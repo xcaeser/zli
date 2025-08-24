@@ -1,4 +1,4 @@
-//! Progress indicator for long running operations
+//! Spinner indicator for long running operations
 
 const std = @import("std");
 const Io = std.Io;
