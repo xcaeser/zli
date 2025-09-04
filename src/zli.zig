@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const Io = std.Io;
-const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
 const StringHashMap = std.StringHashMap;
 const ArrayList = std.ArrayList;
@@ -72,7 +71,8 @@ pub const CommandContext = struct {
     direct_parent: *Command,
     command: *Command,
     allocator: Allocator,
-    writer: *Writer,
+    writer: *Io.Writer,
+    reader: *Io.Reader,
     positional_args: []const []const u8,
     spinner: *Spinner,
     data: ?*anyopaque = null,
@@ -168,12 +168,14 @@ pub const Command = struct {
 
     parent: ?*Command = null,
     allocator: Allocator,
-    writer: *Writer,
+    writer: *Io.Writer,
+    reader: *Io.Reader,
 
-    pub fn init(writer: *Writer, allocator: Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
+    pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
         const cmd = try allocator.create(Command);
         cmd.* = Command{
             .writer = writer,
+            .reader = reader,
             .allocator = allocator,
             .options = options,
             .positional_args = ArrayList(PositionalArg).empty,
@@ -823,7 +825,7 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
-        var spinner = Spinner.init(cmd.writer, cmd.allocator, .{});
+        var spinner = Spinner.init(cmd.writer, cmd.reader, cmd.allocator, .{});
         defer spinner.deinit();
 
         const ctx = CommandContext{
@@ -832,6 +834,7 @@ pub const Command = struct {
             .command = cmd,
             .allocator = cmd.allocator,
             .writer = cmd.writer,
+            .reader = cmd.reader,
             .positional_args = pos_args.items,
             .spinner = &spinner,
             .data = context.data,
@@ -899,7 +902,7 @@ fn printAlignedCommands(commands: []*Command) !void {
 }
 
 /// Prints a list of flags aligned to the maximum width of the flags.
-fn printAlignedFlags(writer: *Writer, flags: []const Flag) !void {
+fn printAlignedFlags(writer: *Io.Writer, flags: []const Flag) !void {
     if (flags.len == 0) return;
 
     // Calculate maximum width for the flag name + shortcut part

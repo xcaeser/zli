@@ -68,9 +68,9 @@ pub fn main() !void {
     const allocator = std.heap.smp_allocator;
 
     const file = fs.File.stdout();
-    var writer = file.writerStreaming(&.{}).interface;
+    var writer = file.writerStreaming(&.{});
 
-    const root = try cli.build(&writer, allocator);
+    const root = try cli.build(&writer.interface, allocator);
     defer root.deinit();
 
     try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });

@@ -3,7 +3,6 @@
 const std = @import("std");
 const Io = std.Io;
 const ArrayList = std.ArrayList;
-const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
 const Thread = std.Thread;
 
@@ -70,7 +69,8 @@ message: []const u8,
 is_spinning: std.atomic.Value(bool),
 frame_index: std.atomic.Value(usize),
 allocator: Allocator,
-writer: *Writer,
+writer: *Io.Writer,
+reader: *Io.Reader,
 thread: ?Thread = null,
 mutex: Thread.Mutex = .{},
 
@@ -80,9 +80,10 @@ mutex: Thread.Mutex = .{},
 ///
 /// Use `Spinner.SpinnerStyles.[option]` or pass in `.{ .frames = " []const []const u8 " }` for a custom style.
 ///
-pub fn init(writer: *Writer, allocator: Allocator, options: SpinnerOptions) Spinner {
+pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: SpinnerOptions) Spinner {
     return Spinner{
         .writer = writer,
+        .reader = reader,
         .allocator = allocator,
         .is_spinning = std.atomic.Value(bool).init(false),
         .frame_index = std.atomic.Value(usize).init(0),

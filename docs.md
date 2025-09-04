@@ -178,10 +178,10 @@ pub fn main() !void {
 
     // New zig Io as of v0.15.1
     const file = fs.File.stdout();
-    var writer = file.writerStreaming(&.{}).interface;
+    var writer = file.writerStreaming(&.{});
 
     // Build the command structure
-    const root_command = try cli_root.build(&writer, allocator); // pass the writer io
+    const root_command = try cli_root.build(&writer.interface, allocator); // pass the writer io
     defer root_command.deinit();
 
     // Execute the command based on os.args
