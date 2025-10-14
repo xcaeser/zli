@@ -11,7 +11,6 @@ const ArrayList = std.ArrayList;
 
 const builtin = @import("lib/builtin.zig");
 pub const styles = builtin.styles;
-
 pub const Spinner = @import("lib/spinner.zig");
 pub const SpinnerStyles = Spinner.SpinnerStyles;
 
@@ -173,6 +172,8 @@ pub const Command = struct {
 
     pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
         const cmd = try allocator.create(Command);
+        errdefer allocator.destroy(cmd);
+
         cmd.* = Command{
             .writer = writer,
             .reader = reader,
