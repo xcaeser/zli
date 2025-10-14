@@ -1,16 +1,14 @@
-### 📟 zli v4.1.1
-
-A blazing-fast CLI framework for Zig.
+### 📟 zli - a blazing-fast CLI framework for Zig.
 
 Build modular, ergonomic, and high-performance CLIs with ease.
 
 Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
-[![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.1-orange.svg?logo=zig)](README.md)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.2-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.1.1-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v4.2.0-green)](https://github.com/xcaeser/zli/releases)
 
 ## 🚀 Features
 
@@ -26,7 +24,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.1.1.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.2.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -65,12 +63,23 @@ const fs = std.fs;
 const cli = @import("cli/root.zig");
 
 pub fn main() !void {
-    const allocator = std.heap.smp_allocator;
+    var dbg = std.heap.DebugAllocator(.{}).init;
 
-    const file = fs.File.stdout();
-    var writer = file.writerStreaming(&.{}).interface;
+    const allocator = switch (builtin.mode) {
+        .Debug => dbg.allocator(),
+        .ReleaseFast, .ReleaseSafe, .ReleaseSmall => std.heap.smp_allocator,
+    };
 
-    const root = try cli.build(&writer, allocator);
+    defer if (builtin.mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
+
+    var wfile = fs.File.stdout().writerStreaming(&.{});
+    var writer = &wfile.interface;
+
+    var buf: [4096]u8 = undefined;
+    var rfile = fs.File.stdin().readerStreaming(&buf);
+    const reader = &rfile.interface;
+
+    const root = try cli.build(writer, reader, allocator);
     defer root.deinit();
 
     try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
@@ -85,20 +94,21 @@ pub fn main() !void {
 // src/cli/root.zig
 const std = @import("std");
 const Writer = std.Io.Writer;
+const Reader = std.Io.Reader;
 const zli = @import("zli");
 
 const run = @import("run.zig");
 const version = @import("version.zig");
 
-pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(writer, allocator, .{
+pub fn build(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, reader, allocator, .{
         .name = "blitz",
         .description = "Your dev toolkit CLI",
     }, showHelp);
 
     try root.addCommands(&.{
-        try run.register(allocator),
-        try version.register(allocator),
+        try run.register(writer, reader, allocator),
+        try version.register(writer, reader, allocator),
     });
 
     return root;
@@ -115,6 +125,7 @@ fn showHelp(ctx: zli.CommandContext) !void {
 // src/cli/run.zig
 const std = @import("std");
 const Writer = std.Io.Writer;
+const Reader = std.Io.Reader;
 const zli = @import("zli");
 
 const now_flag = zli.Flag{
@@ -125,8 +136,8 @@ const now_flag = zli.Flag{
     .default_value = .{ .Bool = false },
 };
 
-pub fn register(writer: *Writer,allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(writer, allocator, .{
+pub fn register(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
+    const cmd = try zli.Command.init(writer, reader, allocator, .{
         .name = "run",
         .description = "Run your workflow",
     }, run);
@@ -174,10 +185,11 @@ fn run(ctx: zli.CommandContext) !void {
 // src/cli/version.zig
 const std = @import("std");
 const Writer = std.Io.Writer;
+const Reader = std.Io.Reader;
 const zli = @import("zli");
 
-pub fn register(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
-    return zli.Command.init(writer, allocator, .{
+pub fn register(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
+    return zli.Command.init(writer, writer, allocator, .{
         .name = "version",
         .shortcut = "v",
         .description = "Show CLI version",
