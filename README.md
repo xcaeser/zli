@@ -72,7 +72,7 @@ pub fn main() !void {
 
     defer if (builtin.mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
 
-        var stdout_writer = fs.File.stdout().writerStreaming(&.{});
+    var stdout_writer = fs.File.stdout().writerStreaming(&.{});
     var stdout = &stdout_writer.interface;
 
     var buf: [4096]u8 = undefined;
