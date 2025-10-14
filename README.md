@@ -72,14 +72,14 @@ pub fn main() !void {
 
     defer if (builtin.mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
 
-    var wfile = fs.File.stdout().writerStreaming(&.{});
-    var writer = &wfile.interface;
+        var stdout_writer = fs.File.stdout().writerStreaming(&.{});
+    var stdout = &stdout_writer.interface;
 
     var buf: [4096]u8 = undefined;
-    var rfile = fs.File.stdin().readerStreaming(&buf);
-    const reader = &rfile.interface;
+    var stdin_reader = fs.File.stdin().readerStreaming(&buf);
+    const stdin = &stdin_reader.interface;
 
-    const root = try cli.build(writer, reader, allocator);
+    const root = try cli.build(stdout, stdin, allocator);
     defer root.deinit();
 
     try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
