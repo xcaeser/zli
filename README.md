@@ -275,7 +275,7 @@ fn work() u128 {
 
 ## 📚 Documentation
 
-See [docs.md](docs.md) for full usage, examples, and internals.
+See [docs](https://xcaeser.github.io/zli/) for full usage, examples, and internals.
 
 ## 📝 License
 
