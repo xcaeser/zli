@@ -28,7 +28,9 @@ pub const FlagValue = union(FlagType) {
     String: []const u8,
 };
 
-/// Flag represents a flag for a command, example: "--verbose". Can be used such as "--verbose true" or "--verbose=22", or just "--verbose".
+/// Flag represents a flag for a command, example: "--verbose".
+///
+/// Can be used such as `--verbose true` or `--verbose=22`, or just `--verbose`.
 pub const Flag = struct {
     name: []const u8,
     shortcut: ?[]const u8 = null,
@@ -56,7 +58,9 @@ pub const Flag = struct {
     }
 };
 
-/// PositionalArg represents a positional argument for a command, example:"cli open file.txt".
+/// PositionalArg represents a positional argument for a command
+///
+/// example: `cli open file.txt`.
 pub const PositionalArg = struct {
     name: []const u8,
     description: []const u8,
@@ -64,7 +68,7 @@ pub const PositionalArg = struct {
     variadic: bool = false,
 };
 
-/// CommandContext represents the context of a command execution. Powerful!
+/// CommandContext represents the context of a command execution.
 pub const CommandContext = struct {
     root: *Command,
     direct_parent: *Command,
@@ -126,10 +130,6 @@ pub const CommandContext = struct {
 /// ExecFn is the type of function that is executed when the command is executed.
 const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 
-/// This is needed to fool the compiler that we are not doing dependency loop
-/// common error would error: dependency loop detected if this function is not passed to the init function.
-const ExecFnToPass = *const fn (ctx: CommandContext) anyerror!void;
-
 /// CommandOptions represents the metadata for a command, such as the name, description, version, and more.
 pub const CommandOptions = struct {
     section_title: []const u8 = "General",
@@ -170,7 +170,10 @@ pub const Command = struct {
     writer: *Io.Writer,
     reader: *Io.Reader,
 
-    pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFnToPass) !*Command {
+    _max_len: usize = 0,
+    _general_padding: usize = 5,
+
+    pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
         const cmd = try allocator.create(Command);
         errdefer allocator.destroy(cmd);
 
@@ -209,10 +212,9 @@ pub const Command = struct {
         self.flags_by_shortcut.deinit();
         self.flag_values.deinit();
 
-        var it = self.commands_by_name.iterator();
-        while (it.next()) |entry| {
-            const cmd = entry.value_ptr.*;
-            cmd.deinit();
+        var it = self.commands_by_name.valueIterator();
+        while (it.next()) |cmd| {
+            cmd.*.deinit();
         }
         self.commands_by_name.deinit();
         self.commands_by_shortcut.deinit();
@@ -220,7 +222,7 @@ pub const Command = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn listCommands(self: *const Command) !void {
+    pub fn printCommands(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
             return;
         }
@@ -241,10 +243,10 @@ pub const Command = struct {
             }
         }.lessThan);
 
-        try printAlignedCommands(commands.items);
+        try printAlignedCommands(commands.items, self._general_padding, self._max_len);
     }
 
-    pub fn listCommandsBySection(self: *const Command) !void {
+    pub fn printCommandsBySection(self: *const Command) !void {
         if (self.commands_by_name.count() == 0) {
             return;
         }
@@ -252,31 +254,30 @@ pub const Command = struct {
         // Map to group commands by their section title.
         var section_map = StringHashMap(ArrayList(*Command)).init(self.allocator);
         defer {
-            var it = section_map.iterator();
-            while (it.next()) |entry| {
-                entry.value_ptr.*.deinit();
+            var it = section_map.valueIterator();
+            while (it.next()) |list| {
+                list.deinit(self.allocator);
             }
             section_map.deinit();
         }
 
-        var it = self.commands_by_name.iterator();
-        while (it.next()) |entry| {
-            const cmd = entry.value_ptr.*;
-            const section = cmd.options.section_title;
+        var it = self.commands_by_name.valueIterator();
+        while (it.next()) |cmd| {
+            const section = cmd.*.options.section_title;
 
             const list = try section_map.getOrPut(section);
             if (!list.found_existing) {
-                list.value_ptr.* = ArrayList(*Command).init(self.allocator);
+                list.value_ptr.* = ArrayList(*Command).empty;
             }
-            try list.value_ptr.*.append(cmd);
+            try list.value_ptr.*.append(self.allocator, cmd.*);
         }
 
-        var section_keys = ArrayList([]const u8).init(self.allocator);
-        defer section_keys.deinit();
+        var section_keys = ArrayList([]const u8).empty;
+        defer section_keys.deinit(self.allocator);
 
         var key_it = section_map.keyIterator();
         while (key_it.next()) |key| {
-            try section_keys.append(key.*);
+            try section_keys.append(self.allocator, key.*);
         }
 
         std.sort.insertion([]const u8, section_keys.items, {}, struct {
@@ -298,49 +299,61 @@ pub const Command = struct {
                 }
             }.lessThan);
 
-            try printAlignedCommands(cmds_list.items);
+            try printAlignedCommands(cmds_list.items, self._general_padding, self._max_len);
             try self.writer.print("\n", .{});
         }
     }
 
-    pub fn listFlags(self: *const Command) !void {
+    pub fn printFlags(self: *const Command) !void {
         if (self.flags_by_name.count() == 0) {
             return;
         }
 
         try self.writer.print("Flags:\n", .{});
 
-        // Collect all flags into a list for processing
-        var flags = ArrayList(Flag).empty;
-        defer flags.deinit(self.allocator);
+        var it = self.flags_by_name.valueIterator();
 
-        var it = self.flags_by_name.iterator();
-        while (it.next()) |entry| {
-            const flag = entry.value_ptr.*;
-            if (!flag.hidden) {
-                try flags.append(self.allocator, flag);
+        while (it.next()) |flag| {
+            if (flag.shortcut) |shortcut| {
+                try self.writer.print("   -{s}, ", .{shortcut});
+            } else {
+                try self.writer.print("   ", .{});
             }
-        }
 
-        try printAlignedFlags(self.writer, flags.items);
+            try self.writer.print("--{s}", .{flag.name});
+
+            const flag_name_len = flag.name.len + 2; // "--" + name
+            const flag_shortcut_len = if (flag.shortcut) |s| s.len + 3 else 0; // account for 3 "-" + shortcut + ", "
+            const flag_total_len = flag_name_len + flag_shortcut_len;
+
+            try self.writer.splatByteAll(' ', self._general_padding + self._max_len - flag_total_len);
+
+            try self.writer.print("{s} [{s}]", .{
+                flag.description,
+                @tagName(flag.type),
+            });
+
+            switch (flag.type) {
+                .Bool => try self.writer.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
+                .Int => try self.writer.print(" (default: {})", .{flag.default_value.Int}),
+                .String => if (flag.default_value.String.len > 0) {
+                    try self.writer.print(" (default: \"{s}\")", .{flag.default_value.String});
+                },
+            }
+            try self.writer.print("\n", .{});
+        }
     }
 
-    pub fn listPositionalArgs(self: *const Command) !void {
+    pub fn printPositionalArgs(self: *const Command) !void {
         if (self.positional_args.items.len == 0) return;
 
         try self.writer.print("Arguments:\n", .{});
 
-        var max_width: usize = 0;
         for (self.positional_args.items) |arg| {
-            const name_len = arg.name.len;
-            if (name_len > max_width) max_width = name_len;
-        }
+            try self.writer.print("   {s}", .{arg.name});
 
-        for (self.positional_args.items) |arg| {
-            const padding = max_width - arg.name.len;
-            try self.writer.print("  {s}", .{arg.name});
-
-            try self.writer.splatByteAll(' ', padding + 4);
+            const width = self._general_padding + self._max_len - arg.name.len;
+            try self.writer.splatByteAll(' ', width);
             try self.writer.print("{s}", .{arg.description});
             if (arg.required) {
                 try self.writer.print(" (required)", .{});
@@ -354,7 +367,7 @@ pub const Command = struct {
         try self.writer.print("\n", .{});
     }
 
-    pub fn listAliases(self: *Command) !void {
+    pub fn printAliases(self: *Command) !void {
         if (self.options.aliases) |aliases| {
             if (aliases.len == 0) return;
             try self.writer.print("Aliases: ", .{});
@@ -391,19 +404,21 @@ pub const Command = struct {
         }
     }
 
-    pub fn showInfo(self: *const Command) !void {
+    pub fn printInfo(self: *const Command) !void {
         try self.writer.print("{s}{s}{s}\n", .{ styles.BOLD, self.options.description, styles.RESET });
         if (self.options.version) |version| try self.writer.print("{s}v{f}{s}\n", .{ styles.DIM, version, styles.RESET });
     }
 
-    pub fn showVersion(self: *const Command) !void {
+    pub fn printVersion(self: *const Command) !void {
         if (self.options.version) |version| try self.writer.print("{f}\n", .{version});
     }
 
     /// Prints traditional help with commands NOT organized by sections
     pub fn printHelp(self: *Command) !void {
         if (!self.options.deprecated) {
-            try self.showInfo();
+            self.calculateMaxLenForWriter();
+
+            try self.printInfo();
             try self.writer.print("\n", .{});
 
             if (self.options.help) |help| {
@@ -427,21 +442,21 @@ pub const Command = struct {
             }
 
             // Aliases
-            try self.listAliases();
+            try self.printAliases();
 
             // Sub commands
             try self.writer.print("\n", .{});
 
             if (self.commands_by_name.count() > 0) try self.writer.print("\n", .{});
-            try self.listCommands();
+            try self.printCommands();
             try self.writer.print("\n", .{});
 
             // Flags
-            try self.listFlags();
+            try self.printFlags();
             if (self.flags_by_name.count() > 0) try self.writer.print("\n", .{});
 
             // Arguments
-            try self.listPositionalArgs();
+            try self.printPositionalArgs();
 
             const has_subcommands = self.commands_by_name.count() > 0;
 
@@ -458,18 +473,20 @@ pub const Command = struct {
         }
     }
 
-    /// Prints help with commands organized by sections
+    /// Prints help with commands organized by sections // @TODO: add padding
     pub fn printStructuredHelp(self: *Command) !void {
         if (!self.options.deprecated) {
-            try self.showInfo();
+            self.calculateMaxLenForWriter();
+
+            try self.printInfo();
             try self.writer.print("\n", .{});
 
             if (self.options.help) |help| {
                 try self.writer.print("{s}\n\n", .{help});
             }
 
-            const parents = try self.getParents(self.allocator);
-            defer parents.deinit();
+            var parents = try self.getParents(self.allocator);
+            defer parents.deinit(self.allocator);
 
             // Usage
             if (self.options.usage) |usage| {
@@ -485,21 +502,21 @@ pub const Command = struct {
             }
 
             // Aliases
-            try self.listAliases();
+            try self.printAliases();
 
             // Sub commands
             try self.writer.print("\n", .{});
 
             if (self.commands_by_name.count() > 0) try self.writer.print("\n", .{});
-            try self.listCommandsBySection();
+            try self.printCommandsBySection();
             try self.writer.print("\n", .{});
 
             // Flags
-            try self.listFlags();
+            try self.printFlags();
             if (self.flags_by_name.count() > 0) try self.writer.print("\n", .{});
 
             // Arguments
-            try self.listPositionalArgs();
+            try self.printPositionalArgs();
 
             const has_subcommands = self.commands_by_name.count() > 0;
 
@@ -600,7 +617,7 @@ pub const Command = struct {
                         std.process.exit(1);
                     };
                     try self.flag_values.put(flag.?.name, flag_value);
-                    _ = try popFront([]const u8, args);
+                    _ = args.orderedRemove(0);
                 }
                 // --flag [value] or boolean
                 else {
@@ -620,13 +637,13 @@ pub const Command = struct {
                             const is_false = std.mem.eql(u8, val, "false");
                             if (is_true or is_false) {
                                 try self.flag_values.put(flag.?.name, .{ .Bool = is_true });
-                                _ = try popFront([]const u8, args); // --flag
-                                _ = try popFront([]const u8, args); // true/false
+                                _ = args.orderedRemove(0); // --flag
+                                _ = args.orderedRemove(0); // true/false
                                 continue;
                             }
                         }
                         try self.flag_values.put(flag.?.name, .{ .Bool = true });
-                        _ = try popFront([]const u8, args);
+                        _ = args.orderedRemove(0);
                     } else {
                         if (!has_next) {
                             try self.writer.print("Missing value for flag --{s}\n", .{flag_name});
@@ -641,8 +658,8 @@ pub const Command = struct {
                             std.process.exit(1);
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
-                        _ = try popFront([]const u8, args); // --flag
-                        _ = try popFront([]const u8, args); // value
+                        _ = args.orderedRemove(0); // --flag
+                        _ = args.orderedRemove(0); // value
                     }
                 }
             }
@@ -679,14 +696,14 @@ pub const Command = struct {
                             std.process.exit(1);
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
-                        _ = try popFront([]const u8, args); // value
+                        _ = args.orderedRemove(0); // value
                     }
                 }
-                _ = try popFront([]const u8, args); // -abc
+                _ = args.orderedRemove(0); // -abc
             }
             // Positional argument
             else {
-                const val = try popFront([]const u8, args);
+                const val = args.orderedRemove(0);
                 try out_positionals.append(self.allocator, val);
             }
         }
@@ -775,7 +792,7 @@ pub const Command = struct {
                 break;
             }
 
-            _ = try popFront([]const u8, args);
+            _ = args.orderedRemove(0);
             current = maybe_next.?;
         }
 
@@ -794,6 +811,7 @@ pub const Command = struct {
     /// ```
     pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
         errdefer self.writer.flush() catch {};
+
         var input = try std.process.argsWithAllocator(self.allocator);
         defer input.deinit();
         _ = input.skip(); // skip program name
@@ -855,119 +873,54 @@ pub const Command = struct {
         try self.writer.print("{s} --help'\n", .{self.options.name});
         try self.writer.flush();
     }
+
+    fn calculateMaxLenForWriter(self: *Command) void {
+        var commands_it = self.commands_by_name.valueIterator();
+        var flags_it = self.flags_by_name.valueIterator();
+        const args = self.positional_args.items;
+
+        while (commands_it.next()) |cmd| {
+            const cmd_name_len = cmd.*.options.name.len;
+            const cmd_shortcut_len = if (cmd.*.options.shortcut) |s| s.len + 3 else 0; // account for 3 = " ()"
+            const cmd_total_len = cmd_name_len + cmd_shortcut_len;
+            self._max_len = @max(self._max_len, cmd_total_len);
+        }
+
+        while (flags_it.next()) |flag| {
+            const flag_name_len = flag.*.name.len + 2; // "--" + name
+            const flag_shortcut_len = if (flag.*.shortcut) |s| s.len + 3 else 0; // account for 3 "-" + shortcut + ", "
+            const flag_total_len = flag_name_len + flag_shortcut_len;
+
+            self._max_len = @max(self._max_len, flag_total_len);
+        }
+        for (args) |arg| {
+            const arg_len = arg.name.len;
+
+            self._max_len = @max(self._max_len, arg_len);
+        }
+    }
 };
 
 // HELPER FUNCTIONS
 
 /// Prints a list of commands aligned to the maximum width of the commands.
-fn printAlignedCommands(commands: []*Command) !void {
-    // Step 1: determine the maximum width of name + shortcut
-    var max_width: usize = 0;
-    for (commands) |cmd| {
-        const name_len = cmd.options.name.len;
-        const shortcut_len = if (cmd.options.shortcut) |s| s.len + 3 else 0; // " ({s})"
-        const total_len = name_len + shortcut_len;
-        if (total_len > max_width) max_width = total_len;
-    }
-
-    // Step 2: print each command with aligned description
+fn printAlignedCommands(commands: []*Command, padding: usize, max_len: usize) !void {
     for (commands) |cmd| {
         const desc = cmd.options.short_description orelse cmd.options.description;
 
-        // Print name
         try cmd.writer.print("   {s}", .{cmd.options.name});
 
-        // Print shortcut directly if exists
         if (cmd.options.shortcut) |s| {
             try cmd.writer.print(" ({s})", .{s});
         }
 
-        // Compute padding
-        const name_len = cmd.options.name.len;
-        var shortcut_len: usize = 0;
-        var extra_parens: usize = 0;
+        const cmd_name_len = cmd.options.name.len;
+        const cmd_shortcut_len = if (cmd.options.shortcut) |s| s.len + 3 else 0; // account for 3 = " ()"
+        const cmd_total_len = cmd_name_len + cmd_shortcut_len;
 
-        if (cmd.options.shortcut) |s| {
-            shortcut_len = s.len;
-            extra_parens = 3; // space + parentheses
-        }
-
-        const printed_width = name_len + shortcut_len + extra_parens;
-
-        const padding = max_width - printed_width;
-
-        try cmd.writer.splatByteAll(' ', padding + 4);
+        const width = padding + max_len - cmd_total_len;
+        try cmd.writer.splatByteAll(' ', width);
 
         try cmd.writer.print("{s}\n", .{desc});
     }
-}
-
-/// Prints a list of flags aligned to the maximum width of the flags.
-fn printAlignedFlags(writer: *Io.Writer, flags: []const Flag) !void {
-    if (flags.len == 0) return;
-
-    // Calculate maximum width for the flag name + shortcut part
-    var max_width: usize = 0;
-    for (flags) |flag| {
-        var flag_width: usize = 0;
-
-        // Add shortcut width if present: " -x, "
-        if (flag.shortcut) |shortcut| {
-            flag_width += 1 + shortcut.len + 2; // " -" + shortcut + ", "
-        } else {
-            flag_width += 5; // "     " (5 spaces for alignment)
-        }
-
-        // Add flag name width: "--flagname"
-        flag_width += 2 + flag.name.len; // "--" + name
-
-        if (flag_width > max_width) {
-            max_width = flag_width;
-        }
-    }
-
-    // Print each flag with proper alignment
-    for (flags) |flag| {
-        var current_width: usize = 0;
-
-        // Print shortcut if available
-        if (flag.shortcut) |shortcut| {
-            try writer.print(" -{s}, ", .{shortcut});
-            current_width += 1 + shortcut.len + 2;
-        } else {
-            try writer.print("     ", .{});
-            current_width += 5;
-        }
-
-        // Print flag name
-        try writer.print("--{s}", .{flag.name});
-        current_width += 2 + flag.name.len;
-
-        // Calculate and add padding
-        const padding = max_width - current_width;
-        try writer.splatByteAll(' ', padding + 4);
-
-        // Print description and type
-        try writer.print("{s} [{s}]", .{
-            flag.description,
-            @tagName(flag.type),
-        });
-
-        // Print default value
-        switch (flag.type) {
-            .Bool => try writer.print(" (default: {s})", .{if (flag.default_value.Bool) "true" else "false"}),
-            .Int => try writer.print(" (default: {})", .{flag.default_value.Int}),
-            .String => if (flag.default_value.String.len > 0) {
-                try writer.print(" (default: \"{s}\")", .{flag.default_value.String});
-            },
-        }
-        try writer.print("\n", .{});
-    }
-}
-
-/// Pop the first element from the list and shift the rest
-// A more efficient popFront
-fn popFront(comptime T: type, list: *ArrayList(T)) !T {
-    if (list.items.len == 0) return error.Empty;
-    return list.orderedRemove(0);
 }
