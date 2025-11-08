@@ -65,12 +65,12 @@ const cli = @import("cli/root.zig");
 pub fn main() !void {
     var dbg = std.heap.DebugAllocator(.{}).init;
 
-    const allocator = switch (builtin.mode) {
+    const allocator = switch (@import("builtin").mode) {
         .Debug => dbg.allocator(),
         .ReleaseFast, .ReleaseSafe, .ReleaseSmall => std.heap.smp_allocator,
     };
 
-    defer if (builtin.mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
+    defer if (@import("builtin").mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
 
     var stdout_writer = fs.File.stdout().writerStreaming(&.{});
     var stdout = &stdout_writer.interface;
@@ -84,7 +84,7 @@ pub fn main() !void {
 
     try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
 
-    try writer.flush(); // Don't forget to flush!
+    try stdout_writer.flush(); // Don't forget to flush!
 }
 ```
 
@@ -104,6 +104,7 @@ pub fn build(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*z
     const root = try zli.Command.init(writer, reader, allocator, .{
         .name = "blitz",
         .description = "Your dev toolkit CLI",
+        .version = .{ .major = 0, .minor = 0, .patch = 1, .pre = null, .build = null },
     }, showHelp);
 
     try root.addCommands(&.{
@@ -189,7 +190,7 @@ const Reader = std.Io.Reader;
 const zli = @import("zli");
 
 pub fn register(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
-    return zli.Command.init(writer, writer, allocator, .{
+    return zli.Command.init(writer, reader, allocator, .{
         .name = "version",
         .shortcut = "v",
         .description = "Show CLI version",
