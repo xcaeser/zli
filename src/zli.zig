@@ -80,7 +80,6 @@ pub const CommandContext = struct {
     spinner: *Spinner,
     data: ?*anyopaque = null,
 
-    // TODO: fix panic: integer cast truncated bits - later im tired
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
         if (self.command.flag_values.get(flag_name)) |val| {
             return switch (val) {
@@ -170,7 +169,10 @@ pub const Command = struct {
     writer: *Io.Writer,
     reader: *Io.Reader,
 
+    /// Automatically calculated, do not change.
     _max_len: usize = 0,
+
+    /// Set to 5, you can change this
     _general_padding: usize = 5,
 
     pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
@@ -473,7 +475,7 @@ pub const Command = struct {
         }
     }
 
-    /// Prints help with commands organized by sections // @TODO: add padding
+    /// Prints help with commands organized by sections
     pub fn printStructuredHelp(self: *Command) !void {
         if (!self.options.deprecated) {
             self.calculateMaxLenForWriter();
