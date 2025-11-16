@@ -74,6 +74,7 @@ pub const CommandContext = struct {
     direct_parent: *Command,
     command: *Command,
     allocator: Allocator,
+    io: Io,
     writer: *Io.Writer,
     reader: *Io.Reader,
     positional_args: []const []const u8,
@@ -166,6 +167,7 @@ pub const Command = struct {
 
     parent: ?*Command = null,
     allocator: Allocator,
+    io: Io,
     writer: *Io.Writer,
     reader: *Io.Reader,
 
@@ -175,11 +177,11 @@ pub const Command = struct {
     /// Set to 5, you can change this
     _general_padding: usize = 5,
 
-    pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
+    pub fn init(io: Io, writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: CommandOptions, execFn: ExecFn) !*Command {
         const cmd = try allocator.create(Command);
         errdefer allocator.destroy(cmd);
-
         cmd.* = Command{
+            .io = io,
             .writer = writer,
             .reader = reader,
             .allocator = allocator,
@@ -846,7 +848,7 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
-        var spinner = Spinner.init(cmd.writer, cmd.reader, cmd.allocator, .{});
+        var spinner = Spinner.init(cmd.io, cmd.writer, cmd.reader, cmd.allocator, .{});
         defer spinner.deinit();
 
         const ctx = CommandContext{
@@ -854,6 +856,7 @@ pub const Command = struct {
             .direct_parent = cmd.parent orelse self,
             .command = cmd,
             .allocator = cmd.allocator,
+            .io = cmd.io,
             .writer = cmd.writer,
             .reader = cmd.reader,
             .positional_args = pos_args.items,
