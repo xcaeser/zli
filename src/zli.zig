@@ -595,6 +595,7 @@ pub const Command = struct {
                 (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")))
             {
                 try self.printHelp();
+                try self.writer.flush();
                 std.process.exit(0);
             }
 
