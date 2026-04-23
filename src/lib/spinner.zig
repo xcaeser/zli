@@ -73,7 +73,7 @@ io: Io,
 writer: *Io.Writer,
 reader: *Io.Reader,
 thread: ?Thread = null,
-mutex: Thread.Mutex = .{},
+mutex: Io.Mutex = .{ .state = .init(.unlocked) },
 
 /// Initiate a new Spinner instance.
 ///
@@ -110,8 +110,8 @@ pub fn print(self: *Spinner, comptime format: []const u8, args: anytype) !void {
 pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     // if (self.is_spinning.load(.monotonic)) return; // already running
 
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    try self.mutex.lock(self.io);
+    defer self.mutex.unlock(self.io);
 
     self.is_spinning.store(true, .release);
 
@@ -135,8 +135,8 @@ pub fn stop(self: *Spinner) void {
 }
 
 pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.mutex.lock(self.io) catch {};
+    defer self.mutex.unlock(self.io);
 
     self.frame_index.store(0, .release);
 

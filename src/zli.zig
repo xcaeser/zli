@@ -790,7 +790,7 @@ pub const Command = struct {
                 // Check if the current command expects positional arguments
                 const expects_pos_args = current.positional_args.items.len > 0;
                 if (!expects_pos_args) {
-                    try current.writer.print("Unknown command: '{s}'\n", .{name});
+                    try current.init_options.writer.print("Unknown command: '{s}'\n", .{name});
                     try current.displayCommandError();
                     return error.UnknownCommand;
                 }
@@ -814,16 +814,14 @@ pub const Command = struct {
     ///  try root.execute(.{});
     ///  try writer.flush();
     /// ```
-    pub fn execute(self: *Command, context: struct { data: ?*anyopaque = null }) !void {
+    pub fn execute(self: *Command, argsIterator: *std.process.Args.Iterator, context: struct { data: ?*anyopaque = null }) !void {
         errdefer self.init_options.writer.flush() catch {};
 
-        var input = try std.process.argsWithAllocator(self.init_options.allocator);
-        defer input.deinit();
-        _ = input.skip(); // skip program name
+        if (!argsIterator.skip()) std.process.exit(1); // skip the program name
 
         var args = ArrayList([]const u8).empty;
         defer args.deinit(self.init_options.allocator);
-        while (input.next()) |arg| {
+        while (argsIterator.next()) |arg| {
             try args.append(self.init_options.allocator, arg);
         }
 
@@ -849,17 +847,17 @@ pub const Command = struct {
             std.process.exit(1);
         };
 
-        var spinner = Spinner.init(cmd.io, cmd.writer, cmd.reader, cmd.allocator, .{});
+        var spinner = Spinner.init(cmd.init_options.io, cmd.init_options.writer, cmd.init_options.reader, cmd.init_options.allocator, .{});
         defer spinner.deinit();
 
         const ctx = CommandContext{
             .root = self,
             .direct_parent = cmd.parent orelse self,
             .command = cmd,
-            .allocator = cmd.allocator,
-            .io = cmd.io,
-            .writer = cmd.writer,
-            .reader = cmd.reader,
+            .allocator = cmd.init_options.allocator,
+            .io = cmd.init_options.io,
+            .writer = cmd.init_options.writer,
+            .reader = cmd.init_options.reader,
             .positional_args = pos_args.items,
             .spinner = &spinner,
             .data = context.data,
@@ -914,10 +912,10 @@ fn printAlignedCommands(commands: []*Command, padding: usize, max_len: usize) !v
     for (commands) |cmd| {
         const desc = cmd.cmd_options.short_description orelse cmd.cmd_options.description;
 
-        try cmd.writer.print("   {s}", .{cmd.cmd_options.name});
+        try cmd.init_options.writer.print("   {s}", .{cmd.cmd_options.name});
 
         if (cmd.cmd_options.shortcut) |s| {
-            try cmd.writer.print(" ({s})", .{s});
+            try cmd.init_options.writer.print(" ({s})", .{s});
         }
 
         const cmd_name_len = cmd.cmd_options.name.len;
@@ -925,8 +923,8 @@ fn printAlignedCommands(commands: []*Command, padding: usize, max_len: usize) !v
         const cmd_total_len = cmd_name_len + cmd_shortcut_len;
 
         const width = padding + max_len - cmd_total_len;
-        try cmd.writer.splatByteAll(' ', width);
+        try cmd.init_options.writer.splatByteAll(' ', width);
 
-        try cmd.writer.print("{s}\n", .{desc});
+        try cmd.init_options.writer.print("{s}\n", .{desc});
     }
 }
