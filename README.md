@@ -59,32 +59,32 @@ your-app/
 ```zig
 // src/main.zig
 const std = @import("std");
-const fs = std.fs;
+const Io = std.Io;
+
 const cli = @import("cli/root.zig");
 
-pub fn main() !void {
-    var dbg = std.heap.DebugAllocator(.{}).init;
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
 
-    const allocator = switch (@import("builtin").mode) {
-        .Debug => dbg.allocator(),
-        .ReleaseFast, .ReleaseSafe, .ReleaseSmall => std.heap.smp_allocator,
-    };
+    var wbuf: [1024]u8 = undefined;
+    var stdout_writer = Io.File.Writer.init(.stdout(), io, &wbuf);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
 
-    defer if (@import("builtin").mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
-
-    var stdout_writer = fs.File.stdout().writerStreaming(&.{});
-    var stdout = &stdout_writer.interface;
-
-    var buf: [4096]u8 = undefined;
-    var stdin_reader = fs.File.stdin().readerStreaming(&buf);
+    var rbuf: [1024]u8 = undefined;
+    var stdin_reader = Io.File.Reader.init(.stdin(), io, &rbuf);
     const stdin = &stdin_reader.interface;
 
-    const root = try cli.build(stdout, stdin, allocator);
+    const root = try cli.build(.{
+        .allocator = init.gpa,
+        .io = io,
+        .writer = stdout,
+        .reader = stdin,
+    });
     defer root.deinit();
 
-    try root.execute(.{}); // Or pass data with: try root.execute(.{ .data = &my_data });
-
-    try stdout_writer.flush(); // Don't forget to flush!
+    var argsIter = init.minimal.args.iterate();
+    try root.execute(&argsIter, .{}); // Or pass data with: try root.execute(&argsIter, .{ .data = &my_data });
 }
 ```
 
@@ -93,23 +93,21 @@ pub fn main() !void {
 ```zig
 // src/cli/root.zig
 const std = @import("std");
-const Writer = std.Io.Writer;
-const Reader = std.Io.Reader;
 const zli = @import("zli");
 
 const run = @import("run.zig");
 const version = @import("version.zig");
 
-pub fn build(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(writer, reader, allocator, .{
+pub fn build(init_options: zli.InitOptions) !*zli.Command {
+    const root = try zli.Command.init(init_options, .{
         .name = "blitz",
         .description = "Your dev toolkit CLI",
         .version = .{ .major = 0, .minor = 0, .patch = 1, .pre = null, .build = null },
     }, showHelp);
 
     try root.addCommands(&.{
-        try run.register(writer, reader, allocator),
-        try version.register(writer, reader, allocator),
+        try run.register(init_options),
+        try version.register(init_options),
     });
 
     return root;
@@ -125,8 +123,6 @@ fn showHelp(ctx: zli.CommandContext) !void {
 ```zig
 // src/cli/run.zig
 const std = @import("std");
-const Writer = std.Io.Writer;
-const Reader = std.Io.Reader;
 const zli = @import("zli");
 
 const now_flag = zli.Flag{
@@ -137,8 +133,8 @@ const now_flag = zli.Flag{
     .default_value = .{ .Bool = false },
 };
 
-pub fn register(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
-    const cmd = try zli.Command.init(writer, reader, allocator, .{
+pub fn register(init_options: zli.InitOptions) !*zli.Command {
+    const cmd = try zli.Command.init(init_options, .{
         .name = "run",
         .description = "Run your workflow",
     }, run);
@@ -185,12 +181,10 @@ fn run(ctx: zli.CommandContext) !void {
 ```zig
 // src/cli/version.zig
 const std = @import("std");
-const Writer = std.Io.Writer;
-const Reader = std.Io.Reader;
 const zli = @import("zli");
 
-pub fn register(writer: *Writer, reader: *Reader, allocator: std.mem.Allocator) !*zli.Command {
-    return zli.Command.init(writer, reader, allocator, .{
+pub fn register(init_options: zli.InitOptions) !*zli.Command {
+    return zli.Command.init(init_options, .{
         .name = "version",
         .shortcut = "v",
         .description = "Show CLI version",
@@ -204,7 +198,7 @@ fn show(ctx: zli.CommandContext) !void {
 
 ### Spinners example
 
-Available funtions:
+Available functions:
 
 - `spinner.start`: to add a new line. sets the spinner to running
 - `spinner.updateStyle`: to update the spinner style
@@ -217,8 +211,8 @@ const std = @import("std");
 const zli = @import("zli");
 
 pub fn run(ctx: zli.CommandContext) !void {
-    var spinner = ctx.spinner;
-    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.earth, .refresh_rate_ms = 150 }); // many styles available
+    const spinner = ctx.spinner;
+    spinner.updateStyle(.{ .frames = zli.SpinnerStyles.earth, .refresh_rate_ms = 150 }); // many styles available
 
     // Step 1
     try spinner.start("Step 1", .{}); // New line
@@ -226,13 +220,13 @@ pub fn run(ctx: zli.CommandContext) !void {
 
     try spinner.succeed("Step 1 success", .{}); // each start must be closed with succeed, fail, info, preserve
 
-    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.weather, .refresh_rate_ms = 150 }); // many styles available
+    spinner.updateStyle(.{ .frames = zli.SpinnerStyles.weather, .refresh_rate_ms = 150 }); // many styles available
 
     // Step 2
     try spinner.start("Step 2", .{}); // New line
     std.Thread.sleep(3000 * std.time.ns_per_ms);
 
-    spinner.updateStyle(.{ .frames = Spinner.SpinnerStyles.dots, .refresh_rate_ms = 150 }); // many styles available
+    spinner.updateStyle(.{ .frames = zli.SpinnerStyles.dots, .refresh_rate_ms = 150 }); // many styles available
     try spinner.updateMessage("Step 2: Calculating things...", .{}); // update the text of step 2
 
     const i = work(); // do some work
