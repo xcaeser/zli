@@ -29,12 +29,12 @@ jobs:
         with:
           version: 0.15.2
       - run: zig build docs
+      - name: Create .nojekyll file
+        run: touch zig-out/docs/.nojekyll
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: "zig-out/docs"
-      - name: Create .nojekyll file
-        run: touch zig-out/docs/.nojekyll
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
