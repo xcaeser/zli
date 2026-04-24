@@ -600,6 +600,7 @@ pub const Command = struct {
                 (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")))
             {
                 try self.printHelp();
+                try self.init_options.writer.flush();
                 std.process.exit(0);
             }
 
@@ -613,12 +614,14 @@ pub const Command = struct {
                     if (flag == null) {
                         try self.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
                         try self.displayCommandError();
+                        try self.init_options.writer.flush();
                         std.process.exit(1);
                     }
                     const flag_value = flag.?.safeEvaluate(value) catch {
                         try self.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                         try self.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                         try self.displayCommandError();
+                        try self.init_options.writer.flush();
                         std.process.exit(1);
                     };
                     try self.flag_values.put(flag.?.name, flag_value);
@@ -631,6 +634,7 @@ pub const Command = struct {
                     if (flag == null) {
                         try self.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
                         try self.displayCommandError();
+                        try self.init_options.writer.flush();
                         std.process.exit(1);
                     }
                     const has_next = args.items.len > 1;
@@ -653,6 +657,7 @@ pub const Command = struct {
                         if (!has_next) {
                             try self.init_options.writer.print("Missing value for flag --{s}\n", .{flag_name});
                             try self.displayCommandError();
+                            try self.init_options.writer.flush();
                             std.process.exit(1);
                         }
                         const value = args.items[1];
@@ -660,6 +665,7 @@ pub const Command = struct {
                             try self.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                             try self.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                             try self.displayCommandError();
+                            try self.init_options.writer.flush();
                             std.process.exit(1);
                         };
                         try self.flag_values.put(flag.?.name, flag_value);
@@ -678,6 +684,7 @@ pub const Command = struct {
                     if (flag == null) {
                         try self.init_options.writer.print("Unknown flag: -{c}\n", .{shortcuts[j]});
                         try self.displayCommandError();
+                        try self.init_options.writer.flush();
                         std.process.exit(1);
                     }
                     if (flag.?.type == .Bool) {
@@ -815,9 +822,12 @@ pub const Command = struct {
     ///  try writer.flush();
     /// ```
     pub fn execute(self: *Command, argsIterator: *std.process.Args.Iterator, context: struct { data: ?*anyopaque = null }) !void {
-        errdefer self.init_options.writer.flush() catch {};
+        // errdefer self.init_options.writer.flush() catch {};
 
-        if (!argsIterator.skip()) std.process.exit(1); // skip the program name
+        if (!argsIterator.skip()) {
+            try self.init_options.writer.flush();
+            std.process.exit(1);
+        }
 
         var args = ArrayList([]const u8).empty;
         defer args.deinit(self.init_options.allocator);
@@ -875,7 +885,6 @@ pub const Command = struct {
             try self.init_options.writer.print("{s} ", .{p.cmd_options.name});
         }
         try self.init_options.writer.print("{s} --help'\n", .{self.cmd_options.name});
-        try self.init_options.writer.flush();
     }
 
     fn calculateMaxLenForWriter(self: *Command) void {

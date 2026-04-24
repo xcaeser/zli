@@ -8,7 +8,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.2-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v4.3.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v5.0.0-green)](https://github.com/xcaeser/zli/releases)
 
 ## 🚀 Features
 
@@ -24,7 +24,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v4.3.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v5.0.0.tar.gz
 ```
 
 Add to your `build.zig`:
