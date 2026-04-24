@@ -69,10 +69,11 @@ message: []const u8,
 is_spinning: std.atomic.Value(bool),
 frame_index: std.atomic.Value(usize),
 allocator: Allocator,
+io: Io,
 writer: *Io.Writer,
 reader: *Io.Reader,
 thread: ?Thread = null,
-mutex: Thread.Mutex = .{},
+mutex: Io.Mutex = .{ .state = .init(.unlocked) },
 
 /// Initiate a new Spinner instance.
 ///
@@ -80,8 +81,9 @@ mutex: Thread.Mutex = .{},
 ///
 /// Use `Spinner.SpinnerStyles.[option]` or pass in `.{ .frames = " []const []const u8 " }` for a custom style.
 ///
-pub fn init(writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: SpinnerOptions) Spinner {
+pub fn init(io: Io, writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: SpinnerOptions) Spinner {
     return Spinner{
+        .io = io,
         .writer = writer,
         .reader = reader,
         .allocator = allocator,
@@ -108,8 +110,8 @@ pub fn print(self: *Spinner, comptime format: []const u8, args: anytype) !void {
 pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     // if (self.is_spinning.load(.monotonic)) return; // already running
 
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    try self.mutex.lock(self.io);
+    defer self.mutex.unlock(self.io);
 
     self.is_spinning.store(true, .release);
 
@@ -133,8 +135,8 @@ pub fn stop(self: *Spinner) void {
 }
 
 pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.mutex.lock(self.io) catch {};
+    defer self.mutex.unlock(self.io);
 
     self.frame_index.store(0, .release);
 
@@ -199,7 +201,7 @@ fn spinLoop(self: *Spinner) void {
 
         self.frame_index.store((index + 1) % self.frames.len, .release);
 
-        Thread.sleep(self.refresh_rate_ms);
+        self.io.sleep(.fromMilliseconds(@intCast(self.refresh_rate_ms)), .real) catch {};
     }
     self.writer.print("\r\x1b[2K", .{}) catch {}; // Clear the line one final time on exit
 }
