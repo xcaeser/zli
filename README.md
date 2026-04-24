@@ -5,7 +5,7 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
-[![Zig Version](https://img.shields.io/badge/Zig_Version-0.15.2-orange.svg?logo=zig)](README.md)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 [![Version](https://img.shields.io/badge/ZLI-v5.0.0-green)](https://github.com/xcaeser/zli/releases)
