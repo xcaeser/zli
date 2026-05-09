@@ -38,6 +38,7 @@ pub const Flag = struct {
     type: FlagType,
     default_value: FlagValue,
     hidden: bool = false,
+    persistent: bool = false,
 
     fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
@@ -553,6 +554,17 @@ pub const Command = struct {
 
     pub fn addCommand(self: *Command, command: *Command) !void {
         command.parent = self;
+
+        // add persistent flags
+        if (self.flags_by_name.count() > 0) {
+            var flag_it = self.flags_by_name.valueIterator();
+            while (flag_it.next()) |f| {
+                if (f.persistent) {
+                    try command.addFlag(f.*);
+                }
+            }
+        }
+
         try self.commands_by_name.put(command.cmd_options.name, command);
         if (command.cmd_options.aliases) |aliases| {
             for (aliases) |alias| {
@@ -580,6 +592,14 @@ pub const Command = struct {
 
     pub fn addFlag(self: *Command, flag: Flag) !void {
         try self.flags_by_name.put(flag.name, flag);
+
+        // add persistent flags
+        if (flag.persistent and self.commands_by_name.count() > 0) {
+            var cmd_it = self.commands_by_name.valueIterator();
+            while (cmd_it.next()) |c| {
+                try c.*.addFlag(flag);
+            }
+        }
         if (flag.shortcut) |shortcut| try self.flags_by_shortcut.put(shortcut, flag);
 
         try self.flag_values.put(flag.name, flag.default_value);
