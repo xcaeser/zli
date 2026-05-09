@@ -808,24 +808,20 @@ pub const Command = struct {
     // Traverse the commands to find the last one in the user input
     fn findLeaf(self: *Command, args: *ArrayList([]const u8)) !*Command {
         var current = self;
+        const is_arg_no_flag = args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-");
 
-        while (args.items.len > 0 and !std.mem.startsWith(u8, args.items[0], "-")) {
+        if (is_arg_no_flag) {
             const name = args.items[0];
-            const maybe_next = current.findCommand(name);
-
-            if (maybe_next == null) {
-                // Check if the current command expects positional arguments
-                const expects_pos_args = current.positional_args.items.len > 0;
-                if (!expects_pos_args) {
+            if (current.commands_by_name.count() == 0) {
+                if (current.positional_args.items.len == 0) {
                     try current.init_options.writer.print("Unknown command: '{s}'\n", .{name});
                     try current.displayCommandError();
                     return error.UnknownCommand;
                 }
-                break;
+            } else if (current.findCommand(name)) |cmd| {
+                _ = args.orderedRemove(0);
+                current = try cmd.findLeaf(args);
             }
-
-            _ = args.orderedRemove(0);
-            current = maybe_next.?;
         }
 
         return current;
