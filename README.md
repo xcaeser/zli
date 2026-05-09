@@ -266,7 +266,7 @@ fn work() u128 {
 - [x] Pretty-aligned help for flags & args
 - [x] Clean usage output like Cobra
 - [x] Spinners and loading state (very powerful)
-- [ ] Persistent flags
+- [x] Persistent flags
 
 ## 📚 Documentation
 

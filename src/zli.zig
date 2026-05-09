@@ -838,8 +838,6 @@ pub const Command = struct {
     ///  try writer.flush();
     /// ```
     pub fn execute(self: *Command, argsIterator: *std.process.Args.Iterator, context: struct { data: ?*anyopaque = null }) !void {
-        // errdefer self.init_options.writer.flush() catch {};
-
         if (!argsIterator.skip()) {
             try self.init_options.writer.flush();
             std.process.exit(1);
