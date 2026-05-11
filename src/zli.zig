@@ -11,6 +11,7 @@ const ArrayList = std.ArrayList;
 
 const builtin = @import("lib/builtin.zig");
 pub const styles = builtin.styles;
+const Parser = @import("lib/parser.zig");
 pub const Spinner = @import("lib/spinner.zig");
 pub const SpinnerStyles = Spinner.SpinnerStyles;
 
@@ -600,7 +601,7 @@ pub const Command = struct {
                 try c.*.addFlag(flag);
             }
         }
-        if (flag.shortcut) |shortcut| try self.flags_by_shortcut.put(shortcut, flag);
+        if (flag.shortcut) |shortcut| if (shortcut.len == 1) try self.flags_by_shortcut.put(shortcut, flag) else @panic("Flag shortcut must be 1 char");
 
         try self.flag_values.put(flag.name, flag.default_value);
     }
@@ -825,6 +826,19 @@ pub const Command = struct {
         }
 
         return current;
+    }
+
+    pub fn execute2(self: *Command, argsIterator: *std.process.Args.Iterator, context: struct { data: ?*anyopaque = null }) !void {
+        _ = context; // autofix
+
+        var args = ArrayList([]const u8).empty;
+        defer args.deinit(self.init_options.allocator);
+
+        // while (argsIterator.next()) |arg| {
+        //     try args.append(self.init_options.allocator, arg);
+        // }
+
+        try Parser.parse(self, &args, argsIterator);
     }
 
     // Need to make find command, parse flags and parse pos_args execution in parallel
