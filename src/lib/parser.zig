@@ -33,34 +33,30 @@ pub fn parse(cmd: *Command, args: *ArrayList([]const u8), argsIterator: *std.pro
 
     std.debug.print("PROGRAM NAME: {s}\n", .{prog_name});
 
-    // for (argsIterator.inner.buffer) |a| {
-    //     std.debug.print("MEMEME: {s} \n", .{a});
-    // }
+    while (argsIterator.next()) |arg| {
+        const arg_type = assessArgType(arg);
+        std.debug.print("ARG: {s}, TYPE: {s}\n", .{ arg, @tagName(arg_type) });
 
-    // while (argsIterator.next()) |arg| {
-    //     const arg_type = assessArgType(arg);
-    //     std.debug.print("ARG: {s}, TYPE: {s}\n", .{ arg, @tagName(arg_type) });
-
-    //     argsw: switch (arg_type) {
-    //         .WORD => {
-    //             // assess if a command as long as next one is not flag type
-    //             // assess if value if prev is flag
-    //         },
-    //         .LONG_FLAG => {},
-    //         .SHORT_FLAG => {},
-    //         .GROUP_FLAG => {
-    //             // split into short flags array and handle with :argsw in a for loop
-    //             break :argsw;
-    //         },
-    //         .NEGATIVE_VALUE => {},
-    //         .NEGATED_FLAG => {},
-    //     }
-    // }
+        argsw: switch (arg_type) {
+            .WORD => {
+                // assess if a command as long as next one is not flag type
+                // assess if value if prev is flag
+            },
+            .LONG_FLAG => {},
+            .SHORT_FLAG => {
+                // depends if flag is bool don't get next one, if not get it
+            },
+            .GROUP_FLAG => {
+                // split into short flags array and handle with :argsw in a for loop
+                break :argsw;
+            },
+            .NEGATIVE_VALUE => {},
+            .NEGATED_FLAG => {},
+        }
+    }
 }
 
 fn assessArgType(arg: []const u8) PType {
-    if (arg.len == 0) return .WORD;
-
     if (std.mem.startsWith(u8, arg, "--no-") and arg.len > "--no-".len) {
         return .NEGATED_FLAG;
     }
