@@ -40,21 +40,15 @@ pub const Flag = struct {
     hidden: bool = false,
     persistent: bool = false,
 
-    fn evaluateValueType(self: *const Flag, value: []const u8) !FlagValue {
+    fn evaluateValue(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
             .Bool => {
                 if (std.mem.eql(u8, value, "true")) return FlagValue{ .Bool = true };
                 if (std.mem.eql(u8, value, "false")) return FlagValue{ .Bool = false };
                 return error.InvalidBooleanValue;
             },
-            .Int => FlagValue{ .Int = try std.fmt.parseInt(i32, value, 10) },
+            .Int => FlagValue{ .Int = std.fmt.parseInt(i32, value, 10) catch return error.InvalidFlagValue },
             .String => FlagValue{ .String = value },
-        };
-    }
-
-    fn safeEvaluate(self: *const Flag, value: []const u8) !FlagValue {
-        return self.evaluateValueType(value) catch {
-            return error.InvalidFlagValue;
         };
     }
 };
@@ -637,7 +631,7 @@ pub const Command = struct {
                         try self.init_options.writer.flush();
                         std.process.exit(1);
                     }
-                    const flag_value = flag.?.safeEvaluate(value) catch {
+                    const flag_value = flag.?.evaluateValue(value) catch {
                         try self.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                         try self.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                         try self.displayCommandError();
@@ -681,7 +675,7 @@ pub const Command = struct {
                             std.process.exit(1);
                         }
                         const value = args.items[1];
-                        const flag_value = flag.?.safeEvaluate(value) catch {
+                        const flag_value = flag.?.evaluateValue(value) catch {
                             try self.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
                             try self.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                             try self.displayCommandError();
@@ -721,7 +715,7 @@ pub const Command = struct {
                             std.process.exit(1);
                         }
                         const value = args.items[1];
-                        const flag_value = flag.?.safeEvaluate(value) catch {
+                        const flag_value = flag.?.evaluateValue(value) catch {
                             try self.init_options.writer.print("Invalid value for flag -{c} ({s}): '{s}'\n", .{ shortcuts[j], flag.?.name, value });
                             try self.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
                             try self.init_options.writer.flush();
@@ -1024,23 +1018,21 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                 const flag_name = arg[2..idx];
                 const value = arg[idx + 1 ..];
 
-                const flag = current.findFlag(flag_name);
-
-                if (flag == null) {
+                if (current.findFlag(flag_name)) |flag| {
+                    const flag_value = flag.evaluateValue(value) catch {
+                        try current.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
+                        try current.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.type)});
+                        try current.displayCommandError();
+                        try current.init_options.writer.flush();
+                        std.process.exit(1);
+                    };
+                    try current.flag_values.put(flag_name, flag_value);
+                } else {
                     try current.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
                     try current.displayCommandError();
                     try current.init_options.writer.flush();
                     std.process.exit(1);
                 }
-
-                const flag_value = flag.?.safeEvaluate(value) catch {
-                    try current.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, value });
-                    try current.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.?.type)});
-                    try current.displayCommandError();
-                    try current.init_options.writer.flush();
-                    std.process.exit(1);
-                };
-                try current.flag_values.put(flag_name, flag_value);
             },
             .LONG_FLAG => {
                 is_flag = true;
