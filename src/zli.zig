@@ -904,7 +904,7 @@ pub const Command = struct {
         try cmd.execFn(ctx);
     }
 
-    fn displayCommandError(self: *Command) !void {
+    pub fn displayCommandError(self: *Command) !void {
         var parents = try self.getParents(self.init_options.allocator);
         defer parents.deinit(self.init_options.allocator);
 
