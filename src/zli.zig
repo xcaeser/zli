@@ -40,7 +40,7 @@ pub const Flag = struct {
     hidden: bool = false,
     persistent: bool = false,
 
-    fn evaluateValue(self: *const Flag, value: []const u8) !FlagValue {
+    pub fn evaluateValue(self: *const Flag, value: []const u8) !FlagValue {
         return switch (self.type) {
             .Bool => {
                 if (std.mem.eql(u8, value, "true")) return FlagValue{ .Bool = true };
@@ -822,7 +822,7 @@ pub const Command = struct {
     }
 
     pub fn execute2(self: *Command, argsIterator: *std.process.Args.Iterator, context: struct { data: ?*anyopaque = null }) !void {
-        _ = context; // autofix
+        _ = context;
 
         // var args = ArrayList([]const u8).empty;
         // defer args.deinit(self.init_options.allocator);
@@ -974,26 +974,22 @@ const PType = enum {
 pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void {
     var current = self;
 
-    const allocator = current.init_options.allocator;
-    _ = allocator; // autofix
-
     const prog_name = argsIterator.next() orelse unreachable; // always the program name as first arg
 
     std.debug.print("PROGRAM NAME: {s}\n", .{prog_name});
 
     var is_flag: bool = false;
     const args_len = argsIterator.inner.remaining.len;
+    _ = args_len; // autofix
 
     outer: while (argsIterator.next()) |arg| {
-        const reverse_idx = args_len - argsIterator.inner.remaining.len % args_len - 1;
+        const reverse_idx = argsIterator.inner.remaining.len;
 
         const arg_type = assessArgType(arg);
         std.debug.print("{d}. {s} : {s}\n", .{ reverse_idx, arg, @tagName(arg_type) });
 
         inner: switch (arg_type) {
             .WORD => {
-                // assess if a command as long as next one is not flag type
-                // if is_flag is true, we should stop looking for commands
                 if (!is_flag) {
                     if (current.commands_by_name.count() == 0) {
                         if (current.positional_args.items.len == 0) {
@@ -1004,6 +1000,10 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                     } else if (current.findCommand(arg)) |found_cmd| {
                         try current.init_options.writer.print("Found command: '{s}'\n", .{found_cmd.cmd_options.name});
                         current = found_cmd;
+                        current.checkDeprecated() catch {
+                            try self.init_options.writer.flush();
+                            std.process.exit(1);
+                        };
                         continue :outer;
                     }
                 }
@@ -1027,6 +1027,8 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                         std.process.exit(1);
                     };
                     try current.flag_values.put(flag_name, flag_value);
+
+                    continue :outer;
                 } else {
                     try current.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
                     try current.displayCommandError();
@@ -1037,7 +1039,23 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
             .LONG_FLAG => {
                 is_flag = true;
 
-                // if long flag is not bool and next one is word, then its good,
+                const flag_name = arg[2..];
+                const remaining_args = reverse_idx - 1 >= 0;
+
+                if (current.findFlag(flag_name)) |flag| {
+                    if (flag.type == .Bool) {}
+                    if (!remaining_args) {
+                        try current.init_options.writer.print("Missing value for flag --{s}\n", .{flag_name});
+                        try current.displayCommandError();
+                        try current.init_options.writer.flush();
+                        std.process.exit(1);
+                    }
+                } else {
+                    try current.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
+                    try current.displayCommandError();
+                    try current.init_options.writer.flush();
+                    std.process.exit(1);
+                }
             },
             .SHORT_FLAG => {
                 // depends if flag is bool don't get next one, if not get it
@@ -1056,17 +1074,11 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
 }
 
 fn assessArgType(arg: []const u8) PType {
-    if (std.mem.startsWith(u8, arg, "--no-") and arg.len > "--no-".len) {
-        return .NEGATED_FLAG;
-    }
+    if (std.mem.startsWith(u8, arg, "--no-") and arg.len > "--no-".len) return .NEGATED_FLAG;
 
-    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len and std.mem.find(u8, arg, "=") != null) {
-        return .LONG_FLAG_WITH_VALUE;
-    }
+    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len and std.mem.find(u8, arg, "=") != null) return .LONG_FLAG_WITH_VALUE;
 
-    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len) {
-        return .LONG_FLAG;
-    }
+    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len) return .LONG_FLAG;
 
     if (arg[0] != '-') return .WORD;
 
