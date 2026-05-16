@@ -14,14 +14,6 @@ const PType = enum {
     NEGATED_FLAG,
 };
 
-const Program = struct {
-    current_commmand: Command,
-    options: ArrayList([]const u8),
-    options_values: ArrayList(u8),
-    positionals: ArrayList([]const u8),
-    allocator: Allocator,
-};
-
 // cli run --flag value --bool --op=77 -p -abc xxxx yyyy zzzz
 pub fn parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void {
     var current = self;

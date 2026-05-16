@@ -971,7 +971,7 @@ const PType = enum {
 };
 
 // cli run --flag value --bool --op=77 -p -abc xxxx yyyy zzzz
-pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void {
+pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void { // needs to give back a cmd context
     var current = self;
 
     const prog_name = argsIterator.next() orelse unreachable; // always the program name as first arg
@@ -1040,10 +1040,30 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                 is_flag = true;
 
                 const flag_name = arg[2..];
-                const remaining_args = reverse_idx - 1 >= 0;
+                const remaining_args = reverse_idx > 0;
+
+                std.debug.print("REMAINING: {}\n", .{remaining_args});
 
                 if (current.findFlag(flag_name)) |flag| {
-                    if (flag.type == .Bool) {}
+                    if (flag.type == .Bool) {
+                        if (!remaining_args) {
+                            try current.flag_values.put(flag_name, .{ .Bool = true });
+                            continue :outer;
+                        }
+
+                        const next_arg: []const u8 = std.mem.span(argsIterator.inner.remaining[argsIterator.inner.remaining.len - reverse_idx]);
+
+                        const flag_value = flag.evaluateValue(next_arg) catch {
+                            try current.init_options.writer.print("Invalid value for flag --{s}: '{s}'\n", .{ flag_name, next_arg });
+                            try current.init_options.writer.print("Expected a value of type: {s}\n", .{@tagName(flag.type)});
+                            try current.displayCommandError();
+                            try current.init_options.writer.flush();
+                            std.process.exit(1);
+                        };
+                        try current.flag_values.put(flag_name, flag_value);
+
+                        continue :outer;
+                    }
                     if (!remaining_args) {
                         try current.init_options.writer.print("Missing value for flag --{s}\n", .{flag_name});
                         try current.displayCommandError();
@@ -1068,6 +1088,9 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
             },
             .NEGATED_FLAG => {
                 is_flag = true;
+                const no_len = "--no-".len;
+                const flag_name = arg[no_len..];
+                std.debug.print("NO FLAG: {s}", .{flag_name});
             },
         }
     }
