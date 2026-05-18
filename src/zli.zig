@@ -964,7 +964,6 @@ const PType = enum {
     WORD, // Command, Value or Pos Arg
     LONG_FLAG_WITH_VALUE,
     LONG_FLAG,
-    SHORT_FLAG,
     GROUP_FLAG,
     // NEGATIVE_VALUE,
     NEGATED_FLAG,
@@ -979,8 +978,6 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
     std.debug.print("PROGRAM NAME: {s}\n", .{prog_name});
 
     var is_flag: bool = false;
-    const args_len = argsIterator.inner.remaining.len;
-    _ = args_len; // autofix
 
     outer: while (argsIterator.next()) |arg| {
         const reverse_idx = argsIterator.inner.remaining.len;
@@ -988,7 +985,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
         const arg_type = assessArgType(arg);
         std.debug.print("{d}. {s} : {s}\n", .{ reverse_idx, arg, @tagName(arg_type) });
 
-        inner: switch (arg_type) {
+        switch (arg_type) {
             .WORD => {
                 if (!is_flag) {
                     if (current.commands_by_name.count() == 0) {
@@ -1042,8 +1039,6 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                 const flag_name = arg[2..];
                 const remaining_args = reverse_idx > 0;
 
-                std.debug.print("REMAINING: {}\n", .{remaining_args});
-
                 if (current.findFlag(flag_name)) |flag| {
                     if (flag.type == .Bool) {
                         if (!remaining_args) {
@@ -1077,20 +1072,30 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                     std.process.exit(1);
                 }
             },
-            .SHORT_FLAG => {
-                // depends if flag is bool don't get next one, if not get it
-                is_flag = true;
-            },
             .GROUP_FLAG => {
                 is_flag = true;
-                // split into short flags array and handle with :argsw in a for loop
-                break :inner;
+
+                const shortcuts = arg[1..];
+
+                var i: usize = 0;
+                while (i < shortcuts.len) : (i += 1) {
+                    const short = shortcuts[i .. i + 1];
+                    if (current.findFlag(short)) |flag| {
+                        _ = flag; // autofix
+                    } else {
+                        try current.init_options.writer.print("Unknown flag shortcut: --{s}\n", .{short});
+                        try current.displayCommandError();
+                        try current.init_options.writer.flush();
+                        std.process.exit(1);
+                    }
+                }
+                continue :outer;
             },
             .NEGATED_FLAG => {
                 is_flag = true;
                 const no_len = "--no-".len;
                 const flag_name = arg[no_len..];
-                std.debug.print("NO FLAG: {s}", .{flag_name});
+                std.debug.print("NEGATED FLAG: {s}\n", .{flag_name});
             },
         }
     }
@@ -1109,9 +1114,7 @@ fn assessArgType(arg: []const u8) PType {
         return .WORD;
     } else |_| {}
 
-    if (arg.len == 2) return .SHORT_FLAG;
-
-    if (arg.len > 2 and arg[1] != '-') return .GROUP_FLAG;
+    if (arg.len >= 2 and arg[1] != '-') return .GROUP_FLAG;
 
     return .WORD;
 }
