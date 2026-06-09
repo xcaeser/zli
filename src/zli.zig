@@ -1093,7 +1093,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
             },
             .NEGATED_FLAG => {
                 is_flag = true;
-                const no_len = "--no-".len;
+                const no_len = "-no-".len;
                 const flag_name = arg[no_len..];
                 std.debug.print("NEGATED FLAG: {s}\n", .{flag_name});
             },
