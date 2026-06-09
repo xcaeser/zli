@@ -1081,9 +1081,9 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
                 while (i < shortcuts.len) : (i += 1) {
                     const short = shortcuts[i .. i + 1];
                     if (current.findFlag(short)) |flag| {
-                        _ = flag; // autofix
+                        try current.init_options.writer.print("Found flag: '{s}'\n", .{flag.name});
                     } else {
-                        try current.init_options.writer.print("Unknown flag shortcut: --{s}\n", .{short});
+                        try current.init_options.writer.print("Unknown flag shortcut: -{s}\n", .{short});
                         try current.displayCommandError();
                         try current.init_options.writer.flush();
                         std.process.exit(1);
@@ -1102,19 +1102,33 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !void
 }
 
 fn assessArgType(arg: []const u8) PType {
-    if (std.mem.startsWith(u8, arg, "--no-") and arg.len > "--no-".len) return .NEGATED_FLAG;
-
-    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len and std.mem.find(u8, arg, "=") != null) return .LONG_FLAG_WITH_VALUE;
-
-    if (std.mem.startsWith(u8, arg, "--") and arg.len > "--".len) return .LONG_FLAG;
+    // Precondition: arg.len > 0
 
     if (arg[0] != '-') return .WORD;
 
-    if (std.fmt.parseInt(i32, arg, 10)) |_| {
-        return .WORD;
-    } else |_| {}
+    if (std.fmt.parseInt(i32, arg, 10)) |_| return .WORD else |_| {}
 
-    if (arg.len >= 2 and arg[1] != '-') return .GROUP_FLAG;
+    if (arg.len == 1) return .WORD;
 
-    return .WORD;
+    if (arg[1] != '-') {
+        if (arg.len > 4 and
+            arg[1] == 'n' and
+            arg[2] == 'o' and
+            arg[3] == '-')
+        {
+            return .NEGATED_FLAG;
+        }
+
+        return .GROUP_FLAG;
+    }
+
+    const body = arg[2..];
+
+    if (body.len == 0) return .WORD;
+
+    if (std.mem.indexOfScalar(u8, body, '=') != null) {
+        return .LONG_FLAG_WITH_VALUE;
+    }
+
+    return .LONG_FLAG;
 }
