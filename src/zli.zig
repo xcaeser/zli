@@ -980,10 +980,11 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
     var is_flag: bool = false;
 
     outer: while (argsIterator.next()) |arg| {
+        try current_cmd.init_options.writer.flush();
         const reverse_idx = argsIterator.inner.remaining.len;
 
         const arg_type = assessArgType(arg);
-        std.debug.print("{d}. {s} : {s}\n", .{ reverse_idx, arg, @tagName(arg_type) });
+        std.debug.print("{d}. {s} : {t}\n", .{ reverse_idx, arg, arg_type });
 
         switch (arg_type) {
             .WORD => {
@@ -1002,23 +1003,23 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                             std.process.exit(1);
                         };
                         current_cmd = found_cmd;
+                        is_flag = true;
                         continue :outer;
                     }
                 }
 
                 // if all good, then pos args is the rest
-
                 if (current_cmd.positional_args.items.len > 0) {
                     const remain: []const [*:0]const u8 = argsIterator.inner.remaining;
                     for (remain) |value| {
-                        std.debug.print("REMAIN: {s}\n", .{value});
+                        std.debug.print("REMAINING: {s}\n", .{value});
                     }
                 }
+                continue :outer;
             },
             .LONG_FLAG_WITH_VALUE => {
                 is_flag = true;
 
-                try current_cmd.init_options.writer.print("Current command: '{s}'\n", .{current_cmd.cmd_options.name});
                 const idx = std.mem.find(u8, arg, "=") orelse unreachable;
                 const flag_name = arg[2..idx];
                 const value = arg[idx + 1 ..];
@@ -1064,7 +1065,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                         std.process.exit(1);
                     }
 
-                    const next_arg: []const u8 = std.mem.span(argsIterator.inner.remaining[argsIterator.inner.remaining.len - reverse_idx]);
+                    const next_arg = argsIterator.next() orelse "";
 
                     const flag_value = flag.evaluateValue(next_arg) catch {
                         try current_cmd.init_options.writer.print(
@@ -1076,7 +1077,6 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                         std.process.exit(1);
                     };
                     try current_cmd.flag_values.put(flag_name, flag_value);
-
                     continue :outer;
                 } else {
                     try current_cmd.init_options.writer.print("Unknown flag: --{s}\n", .{flag_name});
@@ -1094,7 +1094,6 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                 inner: while (i < shortcuts.len) : (i += 1) {
                     const short = shortcuts[i .. i + 1];
                     if (current_cmd.findFlag(short)) |flag| {
-                        try current_cmd.init_options.writer.print("Found flag: '{s}'\n", .{flag.name});
                         if (flag.type == .Bool) {
                             try current_cmd.flag_values.put(flag.name, .{ .Bool = true });
                             continue :inner;
@@ -1114,7 +1113,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                             std.process.exit(1);
                         }
 
-                        const next_arg: []const u8 = std.mem.span(argsIterator.inner.remaining[argsIterator.inner.remaining.len - reverse_idx]);
+                        const next_arg = argsIterator.next() orelse "";
 
                         const flag_value = flag.evaluateValue(next_arg) catch {
                             try current_cmd.init_options.writer.print(
@@ -1125,6 +1124,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                             try current_cmd.init_options.writer.flush();
                             std.process.exit(1);
                         };
+
                         try current_cmd.flag_values.put(flag.name, flag_value);
                         continue :outer;
                     } else {
@@ -1158,11 +1158,9 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
 fn assessArgType(arg: []const u8) PType {
     // Precondition: arg.len > 0
 
-    if (arg[0] != '-') return .WORD;
+    if (arg[0] != '-' or arg.len == 1) return .WORD;
 
     if (std.fmt.parseInt(i32, arg, 10)) |_| return .WORD else |_| {}
-
-    if (arg.len == 1) return .WORD;
 
     if (arg[1] != '-') {
         if (arg.len > 4 and
