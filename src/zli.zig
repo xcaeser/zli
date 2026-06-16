@@ -969,7 +969,6 @@ const ParserOutput = struct {
     command: *Command,
 };
 
-// cli run --flag value --bool --op=77 -p -abc xxxx yyyy zzzz
 pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !ParserOutput { // needs to give back a cmd context
     var current_cmd = self;
 
@@ -1003,19 +1002,23 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
                             std.process.exit(1);
                         };
                         current_cmd = found_cmd;
-                        is_flag = true;
-                        continue :outer;
                     }
+                    is_flag = true;
+                    continue :outer;
                 }
 
                 // if all good, then pos args is the rest
                 if (current_cmd.positional_args.items.len > 0) {
-                    const remain: []const [*:0]const u8 = argsIterator.inner.remaining;
-                    for (remain) |value| {
+                    const remaining: []const [*:0]const u8 = argsIterator.inner.remaining;
+                    var pos_args = try current_cmd.init_options.allocator.alloc([*:0]const u8, remaining.len + 1);
+                    pos_args[0] = arg;
+                    @memcpy(pos_args[1..], remaining);
+                    defer current_cmd.init_options.allocator.free(pos_args);
+                    for (pos_args) |value| {
                         std.debug.print("REMAINING: {s}\n", .{value});
                     }
                 }
-                continue :outer;
+                break;
             },
             .LONG_FLAG_WITH_VALUE => {
                 is_flag = true;
@@ -1152,7 +1155,7 @@ pub fn new_parse(self: *Command, argsIterator: *std.process.Args.Iterator) !Pars
         }
     }
 
-    return .{ .program_name = prog_name, .command = current_cmd }; // maybe dupe??
+    return .{ .program_name = prog_name, .command = current_cmd };
 }
 
 fn assessArgType(arg: []const u8) PType {
