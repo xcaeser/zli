@@ -841,7 +841,7 @@ const ParserOutput = struct {
     }
 };
 
-pub fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandParseErrors!ParserOutput { // needs to give back a cmd context
+fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandParseErrors!ParserOutput { // needs to give back a cmd context
     var current_cmd = self;
     const allocator = current_cmd.init_options.allocator;
 
