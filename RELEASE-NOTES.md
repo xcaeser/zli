@@ -1,4 +1,4 @@
-## zli v5.1.0
+## zli v5.1.1
 
 This release focuses on smoother command parsing, persistent flags, and friendlier onboarding for new users.
 
@@ -25,7 +25,7 @@ This release focuses on smoother command parsing, persistent flags, and friendli
 - Fixed spinner refresh-rate handling so `stop` no longer hangs waiting on a thread sleeping with nanoseconds interpreted as milliseconds.
 - Tightened spinner lifecycle handling around repeated starts, message updates, and empty frame sets.
 - Improved version output by flushing the writer after `printVersion`.
-- Updated README badges and install command for `v5.1.0`.
+- Updated README badges and install command for `v5.1.1`.
 
 ### Changed
 
@@ -33,4 +33,4 @@ This release focuses on smoother command parsing, persistent flags, and friendli
 - Marked persistent flags as complete in the README feature checklist.
 - Added `.DS_Store` and `.idea` to `.gitignore`.
 
-Full changelog: https://github.com/xcaeser/zli/compare/v5.0.0...v5.1.0
+Full changelog: https://github.com/xcaeser/zli/compare/v5.0.0...v5.1.1
