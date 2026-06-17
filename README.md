@@ -8,7 +8,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v5.0.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v5.1.0-green)](https://github.com/xcaeser/zli/releases)
 
 ## 🚀 Features
 
@@ -24,7 +24,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v5.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v5.1.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -34,7 +34,91 @@ const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize })
 exe.root_module.addImport("zli", zli_dep.module("zli"));
 ```
 
-## 🗂 Recommended Structure (but you can do what you want)
+## 🌱 Single-file Quick Start
+
+Start with one `src/main.zig`: initialize the root command, add a flag, add a subcommand, then run it.
+
+```zig
+const std = @import("std");
+const Io = std.Io;
+const zli = @import("zli");
+
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+
+    var wbuf: [1024]u8 = undefined;
+    var stdout_writer = Io.File.Writer.init(.stdout(), io, &wbuf);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
+
+    var rbuf: [1024]u8 = undefined;
+    var stdin_reader = Io.File.Reader.init(.stdin(), io, &rbuf);
+    const stdin = &stdin_reader.interface;
+
+    const init_options = zli.InitOptions{
+        .allocator = init.gpa,
+        .io = io,
+        .writer = stdout,
+        .reader = stdin,
+    };
+
+    const root = try zli.Command.init(init_options, .{
+        .name = "hello",
+        .description = "A tiny zli app",
+        .version = .{ .major = 0, .minor = 1, .patch = 0, .pre = null, .build = null },
+    }, showHelp);
+
+    try root.addFlag(.{
+        .name = "verbose",
+        .shortcut = "v",
+        .description = "Print more details",
+        .type = .Bool,
+        .default_value = .{ .Bool = false },
+        .persistent = true,
+    });
+
+    const greet = try zli.Command.init(init_options, .{
+        .name = "greet",
+        .description = "Greet someone",
+    }, greetSomeone);
+    try greet.addPositionalArg(.{
+        .name = "name",
+        .description = "Who to greet",
+        .required = true,
+    });
+    try root.addCommand(greet);
+
+    var args_iter = init.minimal.args.iterate();
+    root.runAndExit(&args_iter, .{});
+}
+
+fn showHelp(ctx: zli.CommandContext) !void {
+    try ctx.command.printHelp();
+}
+
+fn greetSomeone(ctx: zli.CommandContext) !void {
+    const verbose = ctx.flag("verbose", bool);
+    const name = ctx.getArg("name") orelse "friend";
+
+    if (verbose) {
+        try ctx.writer.print("Preparing greeting for {s}\n", .{name});
+    }
+
+    try ctx.writer.print("Hello, {s}!\n", .{name});
+}
+```
+
+Run it:
+
+```sh
+zig build run -- greet Ada
+zig build run -- --verbose greet Ada
+zig build run -- greet Ada --help
+```
+
+Use `runAndExit` for normal CLI binaries: it prints errors/help and exits with the right process code. Use `execute` when you want library-friendly behavior for tests, embedding, or custom error handling; it returns errors instead of exiting the process.
+
+## 🗂 Folder Structure (but you can do what you want)
 
 ```
 your-app/
@@ -81,10 +165,9 @@ pub fn main(init: std.process.Init) !void {
         .writer = stdout,
         .reader = stdin,
     });
-    defer root.deinit();
 
     var argsIter = init.minimal.args.iterate();
-    try root.execute(&argsIter, .{}); // Or pass data with: try root.execute(&argsIter, .{ .data = &my_data });
+    root.runAndExit(&argsIter, .{}); // Or pass data with: root.runAndExit(&argsIter, .{ .data = &my_data });
 }
 ```
 
@@ -266,7 +349,7 @@ fn work() u128 {
 - [x] Pretty-aligned help for flags & args
 - [x] Clean usage output like Cobra
 - [x] Spinners and loading state (very powerful)
-- [ ] Persistent flags
+- [x] Persistent flags
 
 ## 📚 Documentation
 

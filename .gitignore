@@ -1,4 +1,8 @@
 .zig-cache
 zig-out
 
-.codex
+
+
+.DS_Store
+
+.idea

@@ -10,6 +10,9 @@ const builtin = @import("builtin.zig");
 pub const styles = builtin.styles;
 
 const Spinner = @This();
+const hide_cursor = "\x1b[?25l";
+const show_cursor = "\x1b[?25h";
+const clear_line = "\r\x1b[2K";
 
 pub const SpinnerStyles = union(enum) {
     pub const none = &.{""};
@@ -89,66 +92,88 @@ pub fn init(io: Io, writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator
         .allocator = allocator,
         .is_spinning = std.atomic.Value(bool).init(false),
         .frame_index = std.atomic.Value(usize).init(0),
-        .refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms,
-        .frames = options.frames,
+        .refresh_rate_ms = options.refresh_rate_ms,
+        .frames = normalizeFrames(options.frames),
         .message = "",
     };
 }
 
 pub fn deinit(self: *Spinner) void {
     self.stop();
+    self.showCursor();
     if (self.message.len > 0) {
         self.allocator.free(self.message);
+        self.message = "";
     }
 }
 
 pub fn print(self: *Spinner, comptime format: []const u8, args: anytype) !void {
-    self.writer.print("\r\x1b[2K", .{}) catch {};
+    try self.mutex.lock(self.io);
+    defer self.mutex.unlock(self.io);
+
+    self.writer.print(clear_line, .{}) catch {};
     try self.writer.print(format, args);
 }
 
 pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
-    // if (self.is_spinning.load(.monotonic)) return; // already running
+    self.stop();
 
     try self.mutex.lock(self.io);
     defer self.mutex.unlock(self.io);
 
-    self.is_spinning.store(true, .release);
+    const new_message = try std.fmt.allocPrint(self.allocator, format, args);
 
     if (self.message.len > 0) {
         self.allocator.free(self.message);
     }
+    self.message = new_message;
 
-    self.message = try std.fmt.allocPrint(self.allocator, format, args);
+    self.is_spinning.store(true, .release);
 
-    self.thread = try Thread.spawn(.{}, spinLoop, .{self});
+    self.hideCursor();
+    self.thread = Thread.spawn(.{}, spinLoop, .{self}) catch |err| {
+        self.is_spinning.store(false, .release);
+        self.showCursor();
+        self.allocator.free(self.message);
+        self.message = "";
+        return err;
+    };
 }
 
 pub fn stop(self: *Spinner) void {
-    if (!self.is_spinning.load(.monotonic)) return;
-    self.is_spinning.store(false, .release);
+    const was_spinning = self.is_spinning.swap(false, .acq_rel);
 
     if (self.thread) |t| {
         t.join();
         self.thread = null;
     }
+
+    if (was_spinning) {
+        self.writer.print(clear_line, .{}) catch {};
+        self.showCursor();
+    }
 }
 
 pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
-    self.mutex.lock(self.io) catch {};
+    self.mutex.lock(self.io) catch return;
     defer self.mutex.unlock(self.io);
 
     self.frame_index.store(0, .release);
 
-    self.frames = options.frames;
-    self.refresh_rate_ms = options.refresh_rate_ms * std.time.ns_per_ms;
+    self.frames = normalizeFrames(options.frames);
+    self.refresh_rate_ms = options.refresh_rate_ms;
 }
 
 pub fn updateMessage(self: *Spinner, comptime format: []const u8, args: anytype) !void {
+    try self.mutex.lock(self.io);
+    defer self.mutex.unlock(self.io);
+
+    const new_message = try std.fmt.allocPrint(self.allocator, format, args);
+
     if (self.message.len > 0) {
         self.allocator.free(self.message);
     }
-    self.message = try std.fmt.allocPrint(self.allocator, format, args);
+    self.message = new_message;
 }
 
 pub fn succeed(self: *Spinner, comptime format: []const u8, args: anytype) !void {
@@ -179,29 +204,48 @@ fn finalize(self: *Spinner, state: State, comptime format: []const u8, args: any
         .preserve => styles.DIM ++ "» " ++ styles.RESET,
     };
 
+    const new_message = try std.fmt.allocPrint(self.allocator, format, args);
+
+    self.writer.print(clear_line, .{}) catch {};
+
+    try self.writer.print("{s}{s}\n", .{ ticker, new_message });
+
     if (self.message.len > 0) {
         self.allocator.free(self.message);
     }
-    self.message = try std.fmt.allocPrint(self.allocator, format, args);
-
-    self.writer.print("\r\x1b[2K", .{}) catch {};
-
-    try self.writer.print("{s}{s}\n", .{ ticker, self.message });
-
-    self.allocator.free(self.message);
+    self.allocator.free(new_message);
     self.message = "";
 }
 
 fn spinLoop(self: *Spinner) void {
     while (self.is_spinning.load(.acquire)) {
-        self.writer.print("\r\x1b[2K", .{}) catch {};
+        self.mutex.lock(self.io) catch {
+            self.io.sleep(.fromMilliseconds(@intCast(self.refresh_rate_ms)), .real) catch {};
+            continue;
+        };
 
         const index = self.frame_index.load(.acquire);
+        self.writer.print(clear_line, .{}) catch {};
         self.writer.print("{s}{s}", .{ self.frames[index], self.message }) catch {};
 
         self.frame_index.store((index + 1) % self.frames.len, .release);
+        const refresh_rate_ms = self.refresh_rate_ms;
+        self.mutex.unlock(self.io);
 
-        self.io.sleep(.fromMilliseconds(@intCast(self.refresh_rate_ms)), .real) catch {};
+        self.io.sleep(.fromMilliseconds(@intCast(refresh_rate_ms)), .real) catch {};
     }
-    self.writer.print("\r\x1b[2K", .{}) catch {}; // Clear the line one final time on exit
+}
+
+fn normalizeFrames(frames: []const []const u8) []const []const u8 {
+    return if (frames.len == 0) SpinnerStyles.none else frames;
+}
+
+fn hideCursor(self: *Spinner) void {
+    self.writer.print(hide_cursor, .{}) catch {};
+    self.writer.flush() catch {};
+}
+
+fn showCursor(self: *Spinner) void {
+    self.writer.print(show_cursor, .{}) catch {};
+    self.writer.flush() catch {};
 }
