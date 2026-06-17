@@ -27,6 +27,8 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v6
       - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
       - run: zig build docs
       - name: Create .nojekyll file
         run: touch zig-out/docs/.nojekyll
