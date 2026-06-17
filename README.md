@@ -8,7 +8,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 [![Zig Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
-[![Version](https://img.shields.io/badge/ZLI-v5.0.0-green)](https://github.com/xcaeser/zli/releases)
+[![Version](https://img.shields.io/badge/ZLI-v5.1.0-green)](https://github.com/xcaeser/zli/releases)
 
 ## 🚀 Features
 
@@ -24,7 +24,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 ## 📦 Installation
 
 ```sh
-zig fetch --save=zli https://github.com/xcaeser/zli/archive/v5.0.0.tar.gz
+zig fetch --save=zli https://github.com/xcaeser/zli/archive/v5.1.0.tar.gz
 ```
 
 Add to your `build.zig`:
@@ -36,10 +36,11 @@ exe.root_module.addImport("zli", zli_dep.module("zli"));
 
 ## 🌱 Single-file Quick Start
 
-Start with one `src/main.zig`: initialize the root command, add a flag, add a subcommand, then execute it.
+Start with one `src/main.zig`: initialize the root command, add a flag, add a subcommand, then run it.
 
 ```zig
 const std = @import("std");
+const Io = std.Io;
 const zli = @import("zli");
 
 pub fn main(init: std.process.Init) !void {
@@ -66,7 +67,6 @@ pub fn main(init: std.process.Init) !void {
         .description = "A tiny zli app",
         .version = .{ .major = 0, .minor = 1, .patch = 0, .pre = null, .build = null },
     }, showHelp);
-    defer root.deinit();
 
     try root.addFlag(.{
         .name = "verbose",
@@ -89,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
     try root.addCommand(greet);
 
     var args_iter = init.minimal.args.iterate();
-    try root.execute(&args_iter, .{});
+    root.runAndExit(&args_iter, .{});
 }
 
 fn showHelp(ctx: zli.CommandContext) !void {
@@ -115,6 +115,8 @@ zig build run -- greet Ada
 zig build run -- --verbose greet Ada
 zig build run -- greet Ada --help
 ```
+
+Use `runAndExit` for normal CLI binaries: it prints errors/help and exits with the right process code. Use `execute` when you want library-friendly behavior for tests, embedding, or custom error handling; it returns errors instead of exiting the process.
 
 ## 🗂 Folder Structure (but you can do what you want)
 
@@ -163,10 +165,9 @@ pub fn main(init: std.process.Init) !void {
         .writer = stdout,
         .reader = stdin,
     });
-    defer root.deinit();
 
     var argsIter = init.minimal.args.iterate();
-    try root.execute(&argsIter, .{}); // Or pass data with: try root.execute(&argsIter, .{ .data = &my_data });
+    root.runAndExit(&argsIter, .{}); // Or pass data with: root.runAndExit(&argsIter, .{ .data = &my_data });
 }
 ```
 
