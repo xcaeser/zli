@@ -535,19 +535,6 @@ pub const Command = struct {
 
             // Arguments
             try self.printPositionalArgs();
-
-            const has_subcommands = self.commands_by_name.count() > 0;
-
-            try self.init_options.writer.print("Use \"", .{});
-            for (parents.items) |p| {
-                try self.init_options.writer.print("{s} ", .{p.cmd_options.name});
-            }
-            try self.init_options.writer.print("{s}", .{self.cmd_options.name});
-
-            if (has_subcommands) {
-                try self.init_options.writer.print(" [command]", .{});
-            }
-            try self.init_options.writer.print(" --help\" for more information.\n", .{});
         }
     }
 
