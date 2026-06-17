@@ -21,6 +21,9 @@ This release focuses on smoother command parsing, persistent flags, and friendli
 - Reworked command argument parsing to handle command traversal, long flags, grouped short flags, flag values, and positional arguments through a single parser flow.
 - Improved validation and error messages for missing flag values, invalid flag values, unknown flags, unknown commands, and positional argument count mismatches.
 - Kept `Command.execute` library-friendly by returning parser/execution errors instead of exiting directly.
+- Fixed spinner cursor restoration so hidden cursors are shown again after stopping or deinitializing a spinner.
+- Fixed spinner refresh-rate handling so `stop` no longer hangs waiting on a thread sleeping with nanoseconds interpreted as milliseconds.
+- Tightened spinner lifecycle handling around repeated starts, message updates, and empty frame sets.
 - Improved version output by flushing the writer after `printVersion`.
 - Updated README badges and install command for `v5.1.0`.
 
