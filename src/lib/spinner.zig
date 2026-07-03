@@ -227,6 +227,7 @@ fn spinLoop(self: *Spinner) void {
         const index = self.frame_index.load(.acquire);
         self.writer.print(clear_line, .{}) catch {};
         self.writer.print("{s}{s}", .{ self.frames[index], self.message }) catch {};
+        self.writer.flush() catch {};
 
         self.frame_index.store((index + 1) % self.frames.len, .release);
         const refresh_rate_ms = self.refresh_rate_ms;
