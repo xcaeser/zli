@@ -834,23 +834,37 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
 
     const prog_name = argsIterator.next() orelse unreachable; // always the program name as first arg
 
-    var remaining_args: []const []const u8 = &.{};
+    var positionals: ArrayList([]const u8) = .empty;
+    defer positionals.deinit(allocator);
 
     var is_flag: bool = false;
+    var parse_flags = true;
 
     outer: while (argsIterator.next()) |arg| {
         try current_cmd.init_options.writer.flush();
         const reverse_idx = argsIterator.inner.remaining.len;
 
+        if (parse_flags and std.mem.eql(u8, arg, "--")) {
+            parse_flags = false;
+            continue;
+        }
+
+        if (!parse_flags) {
+            try positionals.append(allocator, arg);
+            continue;
+        }
+
         const arg_type = assessArgType(arg);
 
         switch (arg_type) {
             .WORD => {
-                // Any word related to a flag is not treated here as the iterator is advanced automatically when is_flag=true
                 if (!is_flag) {
                     if (current_cmd.commands_by_name.count() == 0) {
                         if (current_cmd.positional_args.items.len == 0) {
-                            try current_cmd.init_options.writer.print("Unknown command: '{s}'\n", .{arg});
+                            try current_cmd.init_options.writer.print(
+                                "Unknown command: '{s}'\n",
+                                .{arg},
+                            );
                             try current_cmd.displayCommandError();
                             return CommandErrors.UnknownCommand;
                         }
@@ -859,25 +873,20 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                             try self.init_options.writer.flush();
                             return err;
                         };
+
                         current_cmd = found_cmd;
                         continue :outer;
                     }
+
+                    // We've reached the positional section of this command.
                     is_flag = true;
                 }
 
                 if (current_cmd.positional_args.items.len > 0) {
-                    const rest = argsIterator.inner.remaining;
+                    try positionals.append(allocator, arg);
 
-                    var converted = try allocator.alloc([]const u8, rest.len + 1);
-                    errdefer allocator.free(converted);
-
-                    converted[0] = arg;
-
-                    for (rest, 0..) |item, i| {
-                        converted[i + 1] = std.mem.span(item);
-                    }
-
-                    remaining_args = converted;
+                    // IMPORTANT: keep parsing argv.
+                    continue :outer;
                 }
 
                 break;
@@ -1017,6 +1026,17 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 return CommandErrors.UnknownFlag;
             },
         }
+    }
+
+    const remaining_args: []const []const u8 =
+        if (positionals.items.len == 0)
+            &.{}
+        else
+            try positionals.toOwnedSlice(allocator);
+
+    errdefer {
+        if (remaining_args.len > 0)
+            allocator.free(remaining_args);
     }
 
     const help_requested = blk: {
