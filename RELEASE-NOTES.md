@@ -1,7 +1,7 @@
-## zli v5.1.3
+## zli v5.1.4
 
-### Updated
+### Fixed
 
-- Enhance the handling of positional arguments and flags in the argument parsing logic. Standardize the Zig version specification in workflow files for consistency. Remove unnecessary version specifications to streamline the setup process.
+- Commands no longer write a show-cursor escape (`ESC[?25h`) to stdout when they finish. `Spinner.deinit` emitted it unconditionally, so it ended up in piped and captured output; `stop()` already restores the cursor when the spinner was running.
 
-Full changelog: https://github.com/xcaeser/zli/compare/v5.1.2...v5.1.3
+Full changelog: https://github.com/xcaeser/zli/compare/v5.1.3...v5.1.4

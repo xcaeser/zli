@@ -100,7 +100,6 @@ pub fn init(io: Io, writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator
 
 pub fn deinit(self: *Spinner) void {
     self.stop();
-    self.showCursor();
     if (self.message.len > 0) {
         self.allocator.free(self.message);
         self.message = "";
