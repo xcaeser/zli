@@ -5,7 +5,7 @@ Build modular, ergonomic, and high-performance CLIs with ease.
 Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 
 [![Tests](https://github.com/xcaeser/zli/actions/workflows/main.yml/badge.svg)](https://github.com/xcaeser/zli/actions/workflows/main.yml)
-[![Zig Version](https://img.shields.io/badge/Zig_Version-0.16.0-orange.svg?logo=zig)](README.md)
+[![Zig Version](https://img.shields.io/badge/Zig_Version-0.17.0-orange.svg?logo=zig)](README.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey.svg?logo=cachet)](LICENSE)
 [![Built by xcaeser](https://img.shields.io/badge/Built%20by-@xcaeser-blue)](https://github.com/xcaeser)
 [![Version](https://img.shields.io/badge/ZLI-v5.1.4-green)](https://github.com/xcaeser/zli/releases)
@@ -286,8 +286,10 @@ Available functions:
 - `spinner.start`: to add a new line. sets the spinner to running
 - `spinner.updateStyle`: to update the spinner style
 - `spinner.updateMessage`: to update text of a running spinner
-- `spinner.succeed`, `fail`, `info`, `preserve`: mandatory to complete a line you started. each `spinner.start` needs a `spinner.succeed`, `fail` etc.. spinner after this action is done for that specific line
+- `spinner.succeed`, `fail`, `warn`, `info`, `preserve`: mandatory to complete a line you started. each `spinner.start` needs a `spinner.succeed`, `fail` etc.. spinner after this action is done for that specific line. They also work without a `start`, to print a one-off status line
 - Recommendation: use `spinner.print` instead of your own `writer.print` to not have non-displayed messages as spinner works on its own thread
+- When the output is not a terminal (piped, redirected to a file, CI logs), nothing animates: only the finished lines are printed, without colors or escape codes
+- Ctrl+C while a spinner runs restores the hidden cursor before the process exits
 
 ```zig
 const std = @import("std");
@@ -299,7 +301,7 @@ pub fn run(ctx: zli.CommandContext) !void {
 
     // Step 1
     try spinner.start("Step 1", .{}); // New line
-    std.Thread.sleep(2000 * std.time.ns_per_ms);
+    try ctx.io.sleep(.fromSeconds(2), .awake);
 
     try spinner.succeed("Step 1 success", .{}); // each start must be closed with succeed, fail, info, preserve
 
@@ -307,7 +309,7 @@ pub fn run(ctx: zli.CommandContext) !void {
 
     // Step 2
     try spinner.start("Step 2", .{}); // New line
-    std.Thread.sleep(3000 * std.time.ns_per_ms);
+    try ctx.io.sleep(.fromSeconds(3), .awake);
 
     spinner.updateStyle(.{ .frames = zli.SpinnerStyles.dots, .refresh_rate_ms = 150 }); // many styles available
     try spinner.updateMessage("Step 2: Calculating things...", .{}); // update the text of step 2
@@ -318,9 +320,15 @@ pub fn run(ctx: zli.CommandContext) !void {
 
     // Step 3
     try spinner.start("Step 3", .{});
-    std.Thread.sleep(2000 * std.time.ns_per_ms);
+    try ctx.io.sleep(.fromSeconds(2), .awake);
 
-    try spinner.fail("Step 3 fail", .{});
+    try spinner.warn("Step 3 slower than expected", .{});
+
+    // Step 4
+    try spinner.start("Step 4", .{});
+    try ctx.io.sleep(.fromSeconds(2), .awake);
+
+    try spinner.fail("Step 4 fail", .{});
 
     try spinner.print("Finish\n", .{}); // instead of using ctx.writer or another writer to avoid concurrency issues
 }

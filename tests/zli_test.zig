@@ -238,3 +238,21 @@ test "variadic positional must be last" {
     const cmd = h.root.findCommand("echo").?;
     try testing.expectError(error.InvalidPositionalArgOrder, cmd.addPositionalArg(.{ .name = "x", .description = "", .required = false }));
 }
+
+test "spinner without a terminal prints only finished lines" {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    var in: std.Io.Reader = .fixed("");
+    var spinner = zli.Spinner.init(testing.io, &out.writer, &in, testing.allocator, .{});
+    defer spinner.deinit();
+
+    try spinner.succeed("no start needed", .{});
+    try spinner.start("step {d}", .{1});
+    try spinner.updateMessage("still step {d}", .{1});
+    try spinner.print("log\n", .{});
+    try spinner.fail("step {d} {s}", .{ 1, "failed" });
+    try spinner.start("step 2", .{});
+    try spinner.warn("careful", .{});
+
+    try testing.expectEqualStrings("✔ no start needed\nlog\n✖ step 1 failed\n⚠ careful\n", out.written());
+}
