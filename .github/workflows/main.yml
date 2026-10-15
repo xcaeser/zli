@@ -3,12 +3,14 @@ on:
   push:
     paths:
       - "src/**"
+      - "tests/**"
       - "build.zig"
   pull_request:
     branches:
       - main
     paths:
       - "src/**"
+      - "tests/**"
       - "build.zig"
 jobs:
   build:

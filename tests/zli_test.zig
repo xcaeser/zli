@@ -1,0 +1,226 @@
+//! Tests that drive zli the way an app does: build a command tree, feed it a
+//! fake argv, and check what ran and what got printed.
+//!
+//! Run with `zig build test`, or one test with `zig build test -Dtest-filter="greet"`.
+//! To try something out, copy a test, change `argv`, and run it.
+
+const std = @import("std");
+const testing = std.testing;
+const zli = @import("zli");
+
+/// Captures everything the CLI prints and owns the command tree.
+const Harness = struct {
+    out: std.Io.Writer.Allocating,
+    in: std.Io.Reader,
+    root: *zli.Command = undefined,
+
+    fn init(self: *Harness) void {
+        self.* = .{ .out = .init(testing.allocator), .in = .fixed("") };
+    }
+
+    fn deinit(self: *Harness) void {
+        self.root.deinit();
+        self.out.deinit();
+    }
+
+    fn options(self: *Harness) zli.InitOptions {
+        return .{
+            .allocator = testing.allocator,
+            .io = testing.io,
+            .writer = &self.out.writer,
+            .reader = &self.in,
+        };
+    }
+
+    /// Runs the CLI with `argv` (argv[0] is the program name) and flushes output.
+    fn run(self: *Harness, argv: []const [*:0]const u8, data: ?*anyopaque) !void {
+        var it = (std.process.Args{ .vector = argv }).iterate();
+        defer self.out.writer.flush() catch {};
+        try self.root.execute(&it, .{ .data = data });
+    }
+
+    fn output(self: *Harness) []const u8 {
+        return self.out.written();
+    }
+};
+
+/// Same tree as the README quick start, plus a few extras to poke at.
+fn buildCli(h: *Harness) !void {
+    const opts = h.options();
+
+    h.root = try zli.Command.init(opts, .{
+        .name = "hello",
+        .description = "A tiny zli app",
+        .version = .{ .major = 0, .minor = 1, .patch = 0, .pre = null, .build = null },
+    }, showHelp);
+
+    try h.root.addFlag(.{
+        .name = "verbose",
+        .shortcut = "v",
+        .description = "Print more details",
+        .type = .Bool,
+        .default_value = .{ .Bool = false },
+        .persistent = true,
+    });
+
+    const greet = try zli.Command.init(opts, .{
+        .name = "greet",
+        .shortcut = "g",
+        .aliases = &.{"hi"},
+        .description = "Greet someone",
+    }, greetSomeone);
+    try greet.addPositionalArg(.{ .name = "name", .description = "Who to greet", .required = true });
+    try greet.addFlags(&.{
+        .{ .name = "times", .shortcut = "t", .description = "Repeat", .type = .Int, .default_value = .{ .Int = 1 } },
+        .{ .name = "greeting", .description = "Word to use", .type = .String, .default_value = .{ .String = "Hello" } },
+    });
+
+    const echo = try zli.Command.init(opts, .{ .name = "echo", .description = "Print words" }, echoWords);
+    try echo.addPositionalArg(.{ .name = "words", .description = "Words", .required = false, .variadic = true });
+
+    const old = try zli.Command.init(opts, .{
+        .name = "old",
+        .description = "Old command",
+        .deprecated = true,
+        .replaced_by = "greet",
+    }, showHelp);
+
+    const count = try zli.Command.init(opts, .{ .name = "count", .description = "Count calls" }, countCalls);
+
+    try h.root.addCommands(&.{ greet, echo, old, count });
+}
+
+fn showHelp(ctx: zli.CommandContext) !void {
+    try ctx.command.printHelp();
+}
+
+fn greetSomeone(ctx: zli.CommandContext) !void {
+    const name = ctx.getArg("name") orelse "friend";
+    if (ctx.flag("verbose", bool)) try ctx.writer.print("Preparing greeting for {s}\n", .{name});
+    for (0..ctx.flag("times", u32)) |_| {
+        try ctx.writer.print("{s}, {s}!\n", .{ ctx.flag("greeting", []const u8), name });
+    }
+}
+
+fn echoWords(ctx: zli.CommandContext) !void {
+    for (ctx.positional_args) |w| try ctx.writer.print("[{s}]", .{w});
+}
+
+fn countCalls(ctx: zli.CommandContext) !void {
+    ctx.getContextData(u32).* += 1;
+}
+
+fn expectRun(argv: []const [*:0]const u8, expected: []const u8) !void {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    try h.run(argv, null);
+    try testing.expectEqualStrings(expected, h.output());
+}
+
+fn expectRunError(argv: []const [*:0]const u8, err: anyerror, expected_substring: []const u8) !void {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    try testing.expectError(err, h.run(argv, null));
+    if (std.mem.indexOf(u8, h.output(), expected_substring) == null) {
+        std.debug.print("output was:\n{s}\n", .{h.output()});
+        return error.TestUnexpectedOutput;
+    }
+}
+
+test "greet with a required positional arg" {
+    try expectRun(&.{ "hello", "greet", "Ada" }, "Hello, Ada!\n");
+}
+
+test "subcommand shortcut and alias" {
+    try expectRun(&.{ "hello", "g", "Ada" }, "Hello, Ada!\n");
+    try expectRun(&.{ "hello", "hi", "Ada" }, "Hello, Ada!\n");
+}
+
+test "persistent bool flag after the subcommand" {
+    try expectRun(&.{ "hello", "greet", "Ada", "--verbose" }, "Preparing greeting for Ada\nHello, Ada!\n");
+    try expectRun(&.{ "hello", "greet", "-v", "Ada" }, "Preparing greeting for Ada\nHello, Ada!\n");
+}
+
+test "negated bool flag" {
+    try expectRun(&.{ "hello", "greet", "Ada", "--verbose", "--no-verbose" }, "Hello, Ada!\n");
+}
+
+test "int and string flag forms" {
+    const two = "Hey, Ada!\nHey, Ada!\n";
+    try expectRun(&.{ "hello", "greet", "Ada", "--times=2", "--greeting=Hey" }, two);
+    try expectRun(&.{ "hello", "greet", "Ada", "--times", "2", "--greeting", "Hey" }, two);
+    try expectRun(&.{ "hello", "greet", "Ada", "-t", "2", "--greeting=Hey" }, two);
+}
+
+test "grouped short flags, value flag last" {
+    try expectRun(&.{ "hello", "greet", "Ada", "-vt", "2" }, "Preparing greeting for Ada\nHello, Ada!\nHello, Ada!\n");
+}
+
+test "variadic args and -- separator" {
+    try expectRun(&.{ "hello", "echo", "a", "b", "c" }, "[a][b][c]");
+    try expectRun(&.{ "hello", "echo", "--", "--not-a-flag", "-x" }, "[--not-a-flag][-x]");
+    try expectRun(&.{ "hello", "echo" }, "");
+}
+
+test "negative numbers are positional, not flags" {
+    try expectRun(&.{ "hello", "echo", "-5", "-12" }, "[-5][-12]");
+}
+
+test "help flag prints help and skips the command" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    try h.run(&.{ "hello", "greet", "--help" }, null);
+    const out = h.output();
+    try testing.expect(std.mem.indexOf(u8, out, "Usage: hello greet [options] <name>") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "--times") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "Hello, ") == null);
+}
+
+test "root without args runs root exec (help)" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    try h.run(&.{"hello"}, null);
+    const out = h.output();
+    try testing.expect(std.mem.indexOf(u8, out, "A tiny zli app") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "Greet someone") != null);
+}
+
+test "context data reaches the command" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    var calls: u32 = 0;
+    try h.run(&.{ "hello", "count" }, &calls);
+    try testing.expectEqual(1, calls);
+}
+
+test "errors" {
+    try expectRunError(&.{ "hello", "greet" }, error.MissingArgs, "Missing 1 positional argument(s).");
+    try expectRunError(&.{ "hello", "greet", "Ada", "Bob" }, error.TooManyArgs, "Expected at most 1, got 2");
+    try expectRunError(&.{ "hello", "greet", "Ada", "--nope" }, error.UnknownFlag, "Unknown flag: --nope");
+    try expectRunError(&.{ "hello", "greet", "Ada", "-x" }, error.UnknownFlag, "Unknown flag shortcut: -x");
+    try expectRunError(&.{ "hello", "greet", "Ada", "--times=abc" }, error.InvalidFlagValue, "Invalid value for flag --times");
+    try expectRunError(&.{ "hello", "greet", "Ada", "--times" }, error.MissingFlagValue, "Missing value for flag --times");
+    try expectRunError(&.{ "hello", "greet", "Ada", "-tv", "2" }, error.InvalidFlagShortcut, "must be last in group");
+    try expectRunError(&.{ "hello", "greet", "Ada", "--no-times" }, error.InvalidFlagNegation, "does not accept negation");
+    try expectRunError(&.{ "hello", "count", "extra" }, error.UnknownCommand, "Unknown command: 'extra'");
+    try expectRunError(&.{ "hello", "old" }, error.CommandDeprecated, "Use 'greet' instead.");
+}
+
+test "variadic positional must be last" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    const cmd = h.root.findCommand("echo").?;
+    try testing.expectError(error.InvalidPositionalArgOrder, cmd.addPositionalArg(.{ .name = "x", .description = "", .required = false }));
+}
