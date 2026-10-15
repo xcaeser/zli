@@ -226,6 +226,7 @@ pub const Command = struct {
             .shortcut = "h",
             .type = .Bool,
             .default_value = .{ .Bool = false },
+            .persistent = true, // `app --help sub` shows sub's help
         };
 
         try cmd.addFlag(helpFlag);
@@ -837,7 +838,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     var positionals: ArrayList([]const u8) = .empty;
     defer positionals.deinit(allocator);
 
-    var is_flag: bool = false;
+    var in_positionals = false;
     var parse_flags = true;
 
     outer: while (argsIterator.next()) |arg| {
@@ -858,7 +859,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
 
         switch (arg_type) {
             .WORD => {
-                if (!is_flag) {
+                if (!in_positionals) {
                     if (current_cmd.commands_by_name.count() == 0) {
                         if (current_cmd.positional_args.items.len == 0) {
                             try current_cmd.init_options.writer.print(
@@ -874,12 +875,18 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                             return err;
                         };
 
+                        // Persistent flags given before the subcommand carry down to it.
+                        var flag_it = current_cmd.flags_by_name.valueIterator();
+                        while (flag_it.next()) |f| {
+                            if (f.persistent) try found_cmd.flag_values.put(f.name, current_cmd.flag_values.get(f.name).?);
+                        }
+
                         current_cmd = found_cmd;
                         continue :outer;
                     }
 
                     // We've reached the positional section of this command.
-                    is_flag = true;
+                    in_positionals = true;
                 }
 
                 if (current_cmd.positional_args.items.len > 0) {
@@ -892,8 +899,6 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 break;
             },
             .LONG_FLAG_WITH_VALUE => {
-                is_flag = true;
-
                 const idx = std.mem.find(u8, arg, "=") orelse unreachable;
                 const flag_name = arg[2..idx];
                 const value = arg[idx + 1 ..];
@@ -919,8 +924,6 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 }
             },
             .LONG_FLAG => {
-                is_flag = true;
-
                 const flag_name = arg[2..];
                 const any_remaining_args = reverse_idx > 0;
 
@@ -958,8 +961,6 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 }
             },
             .GROUP_FLAG => {
-                is_flag = true;
-
                 const shortcuts = arg[1..];
 
                 var i: usize = 0;
@@ -1008,7 +1009,6 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 }
             },
             .NEGATED_FLAG => {
-                is_flag = true;
                 const no_len = "--no-".len;
                 const flag_name = arg[no_len..];
                 if (current_cmd.findFlag(flag_name)) |flag| {

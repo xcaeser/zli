@@ -145,6 +145,11 @@ test "persistent bool flag after the subcommand" {
     try expectRun(&.{ "hello", "greet", "-v", "Ada" }, "Preparing greeting for Ada\nHello, Ada!\n");
 }
 
+test "persistent bool flag before the subcommand" {
+    try expectRun(&.{ "hello", "--verbose", "greet", "Ada" }, "Preparing greeting for Ada\nHello, Ada!\n");
+    try expectRun(&.{ "hello", "-v", "greet", "Ada", "--no-verbose" }, "Hello, Ada!\n");
+}
+
 test "negated bool flag" {
     try expectRun(&.{ "hello", "greet", "Ada", "--verbose", "--no-verbose" }, "Hello, Ada!\n");
 }
@@ -180,6 +185,15 @@ test "help flag prints help and skips the command" {
     try testing.expect(std.mem.indexOf(u8, out, "Usage: hello greet [options] <name>") != null);
     try testing.expect(std.mem.indexOf(u8, out, "--times") != null);
     try testing.expect(std.mem.indexOf(u8, out, "Hello, ") == null);
+}
+
+test "help flag before the subcommand shows the subcommand's help" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+    try h.run(&.{ "hello", "--help", "greet" }, null);
+    try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello greet [options] <name>") != null);
 }
 
 test "root without args runs root exec (help)" {
