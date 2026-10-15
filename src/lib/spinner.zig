@@ -10,7 +10,7 @@ const posix = std.posix;
 const native_os = @import("builtin").os.tag;
 
 const builtin = @import("builtin.zig");
-pub const styles = builtin.styles;
+const styles = builtin.styles;
 
 const Spinner = @This();
 const hide_cursor = "\x1b[?25l";
@@ -23,43 +23,44 @@ const wrap_on = "\x1b[?7h";
 
 pub const SpinnerStyles = struct {
     pub const none = &.{""};
-    pub const line = &.{ "- ", "\\ ", "| ", "/ " };
-    pub const arc = &.{ "◜ ", "◠ ", "◝ ", "◞ ", "◡ ", "◟ " };
-    pub const point = &.{ "∙∙∙ ", "●∙∙ ", "∙●∙ ", "∙∙● ", "∙∙∙ " };
+    pub const line = &.{ "-", "\\", "|", "/" };
+    pub const arc = &.{ "◜", "◠", "◝", "◞", "◡", "◟" };
+    pub const point = &.{ "∙∙∙", "●∙∙", "∙●∙", "∙∙●", "∙∙∙" };
 
-    pub const dots = &.{ "⠋ ", "⠙ ", "⠹ ", "⠸ ", "⠼ ", "⠴ ", "⠦ ", "⠧ ", "⠇ ", "⠏ " };
-    pub const dots2 = &.{ "⣼ ", "⣹ ", "⢻ ", "⠿ ", "⡟ ", "⣏ ", "⣧ ", "⣶ " };
-    pub const dots_wide = &.{ "⠉⠉ ", "⠈⠙ ", "⠀⠹ ", "⠀⢸ ", "⠀⣰ ", "⢀⣠ ", "⣀⣀ ", "⣄⡀ ", "⣆⠀ ", "⡇⠀ ", "⠏⠀ ", "⠋⠁ " };
-    pub const dots_circle = &.{ "⢎  ", "⠎⠁ ", "⠊⠑ ", "⠈⠱ ", " ⡱ ", "⢀⡰ ", "⢄⡠ ", "⢆⡀ " };
-    pub const dots_8bit = &.{ "  ", "⠁ ", "⠂ ", "⠃ ", "⠄ ", "⠅ ", "⠆ ", "⠇ ", "⡀ ", "⡁ ", "⡂ ", "⡃ ", "⡄ ", "⡅ ", "⡆ ", "⡇ ", "⠈ ", "⠉ ", "⠊ ", "⠋ ", "⠌ ", "⠍ ", "⠎ ", "⠏ ", "⡈ ", "⡉ ", "⡊ ", "⡋ ", "⡌ ", "⡍ ", "⡎ ", "⡏ ", "⠐ ", "⠑ ", "⠒ ", "⠓ ", "⠔ ", "⠕ ", "⠖ ", "⠗ ", "⡐ ", "⡑ ", "⡒ ", "⡓ ", "⡔ ", "⡕ ", "⡖ ", "⡗ ", "⠘ ", "⠙ ", "⠚ ", "⠛ ", "⠜ ", "⠝ ", "⠞ ", "⠟ ", "⡘ ", "⡙ ", "⡚ ", "⡛ ", "⡜ ", "⡝ ", "⡞ ", "⡟ ", "⠠ ", "⠡ ", "⠢ ", "⠣ ", "⠤ ", "⠥ ", "⠦ ", "⠧ ", "⡠ ", "⡡ ", "⡢ ", "⡣ ", "⡤ ", "⡥ ", "⡦ ", "⡧ ", "⠨ ", "⠩ ", "⠪ ", "⠫ ", "⠬ ", "⠭ ", "⠮ ", "⠯ ", "⡨ ", "⡩ ", "⡪ ", "⡫ ", "⡬ ", "⡭ ", "⡮ ", "⡯ ", "⠰ ", "⠱ ", "⠲ ", "⠳ ", "⠴ ", "⠵ ", "⠶ ", "⠷ ", "⡰ ", "⡱ ", "⡲ ", "⡳ ", "⡴ ", "⡵ ", "⡶ ", "⡷ ", "⠸ ", "⠹ ", "⠺ ", "⠻ ", "⠼ ", "⠽ ", "⠾ ", "⠿ ", "⡸ ", "⡹ ", "⡺ ", "⡻ ", "⡼ ", "⡽ ", "⡾ ", "⡿ ", "⢀ ", "⢁ ", "⢂ ", "⢃ ", "⢄ ", "⢅ ", "⢆ ", "⢇ ", "⣀ ", "⣁ ", "⣂ ", "⣃ ", "⣄ ", "⣅ ", "⣆ ", "⣇ ", "⢈ ", "⢉ ", "⢊ ", "⢋ ", "⢌ ", "⢍ ", "⢎ ", "⢏ ", "⣈ ", "⣉ ", "⣊ ", "⣋ ", "⣌ ", "⣍ ", "⣎ ", "⣏ ", "⢐ ", "⢑ ", "⢒ ", "⢓ ", "⢔ ", "⢕ ", "⢖ ", "⢗ ", "⣐ ", "⣑ ", "⣒ ", "⣓ ", "⣔ ", "⣕ ", "⣖ ", "⣗ ", "⢘ ", "⢙ ", "⢚ ", "⢛ ", "⢜ ", "⢝ ", "⢞ ", "⢟ ", "⣘ ", "⣙ ", "⣚ ", "⣛ ", "⣜ ", "⣝ ", "⣞ ", "⣟ ", "⢠ ", "⢡ ", "⢢ ", "⢣ ", "⢤ ", "⢥ ", "⢦ ", "⢧ ", "⣠ ", "⣡ ", "⣢ ", "⣣ ", "⣤ ", "⣥ ", "⣦ ", "⣧ ", "⢨ ", "⢩ ", "⢪ ", "⢫ ", "⢬ ", "⢭ ", "⢮ ", "⢯ ", "⣨ ", "⣩ ", "⣪ ", "⣫ ", "⣬ ", "⣭ ", "⣮ ", "⣯ ", "⢰ ", "⢱ ", "⢲ ", "⢳ ", "⢴ ", "⢵ ", "⢶ ", "⢷ ", "⣰ ", "⣱ ", "⣲ ", "⣳ ", "⣴ ", "⣵ ", "⣶ ", "⣷ ", "⢸ ", "⢹ ", "⢺ ", "⢻ ", "⢼ ", "⢽ ", "⢾ ", "⢿ ", "⣸ ", "⣹ ", "⣺ ", "⣻ ", "⣼ ", "⣽ ", "⣾ ", "⣿ " };
-    pub const sand = &.{ "⠁ ", "⠂ ", "⠄ ", "⡀ ", "⡈ ", "⡐ ", "⢁ ", "⡠ ", "⣀ ", "⣁ ", "⣂ ", "⣄ ", "⣌ ", "⣔ ", "⣤ ", "⣥ ", "⣦ ", "⣮ ", "⣶ ", "⣷ ", "⣿ ", "⡿ ", "⠿ ", "⢟ ", "⠟ ", "⡛ ", "⠛ ", "⠫ ", "⢋ ", "⠋ ", "⠍ ", "⡉ ", "⠉ ", "⠑ ", "⠡ " };
-    pub const dots_scrolling = &.{ ".   ", "..  ", "... ", " .. ", "  . ", "    " };
-    pub const flip = &.{ "_ ", "_ ", "_ ", "- ", "` ", "` ", "' ", "´ ", "- ", "_ ", "_ ", "_ " };
+    pub const dots = &.{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+    pub const dots2 = &.{ "⣼", "⣹", "⢻", "⠿", "⡟", "⣏", "⣧", "⣶" };
+    pub const dots_wide = &.{ "⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁" };
+    pub const dots_circle = &.{ "⢎ ", "⠎⠁", "⠊⠑", "⠈⠱", " ⡱", "⢀⡰", "⢄⡠", "⢆⡀" };
+    pub const dots_8bit = &.{ " ", "⠁", "⠂", "⠃", "⠄", "⠅", "⠆", "⠇", "⡀", "⡁", "⡂", "⡃", "⡄", "⡅", "⡆", "⡇", "⠈", "⠉", "⠊", "⠋", "⠌", "⠍", "⠎", "⠏", "⡈", "⡉", "⡊", "⡋", "⡌", "⡍", "⡎", "⡏", "⠐", "⠑", "⠒", "⠓", "⠔", "⠕", "⠖", "⠗", "⡐", "⡑", "⡒", "⡓", "⡔", "⡕", "⡖", "⡗", "⠘", "⠙", "⠚", "⠛", "⠜", "⠝", "⠞", "⠟", "⡘", "⡙", "⡚", "⡛", "⡜", "⡝", "⡞", "⡟", "⠠", "⠡", "⠢", "⠣", "⠤", "⠥", "⠦", "⠧", "⡠", "⡡", "⡢", "⡣", "⡤", "⡥", "⡦", "⡧", "⠨", "⠩", "⠪", "⠫", "⠬", "⠭", "⠮", "⠯", "⡨", "⡩", "⡪", "⡫", "⡬", "⡭", "⡮", "⡯", "⠰", "⠱", "⠲", "⠳", "⠴", "⠵", "⠶", "⠷", "⡰", "⡱", "⡲", "⡳", "⡴", "⡵", "⡶", "⡷", "⠸", "⠹", "⠺", "⠻", "⠼", "⠽", "⠾", "⠿", "⡸", "⡹", "⡺", "⡻", "⡼", "⡽", "⡾", "⡿", "⢀", "⢁", "⢂", "⢃", "⢄", "⢅", "⢆", "⢇", "⣀", "⣁", "⣂", "⣃", "⣄", "⣅", "⣆", "⣇", "⢈", "⢉", "⢊", "⢋", "⢌", "⢍", "⢎", "⢏", "⣈", "⣉", "⣊", "⣋", "⣌", "⣍", "⣎", "⣏", "⢐", "⢑", "⢒", "⢓", "⢔", "⢕", "⢖", "⢗", "⣐", "⣑", "⣒", "⣓", "⣔", "⣕", "⣖", "⣗", "⢘", "⢙", "⢚", "⢛", "⢜", "⢝", "⢞", "⢟", "⣘", "⣙", "⣚", "⣛", "⣜", "⣝", "⣞", "⣟", "⢠", "⢡", "⢢", "⢣", "⢤", "⢥", "⢦", "⢧", "⣠", "⣡", "⣢", "⣣", "⣤", "⣥", "⣦", "⣧", "⢨", "⢩", "⢪", "⢫", "⢬", "⢭", "⢮", "⢯", "⣨", "⣩", "⣪", "⣫", "⣬", "⣭", "⣮", "⣯", "⢰", "⢱", "⢲", "⢳", "⢴", "⢵", "⢶", "⢷", "⣰", "⣱", "⣲", "⣳", "⣴", "⣵", "⣶", "⣷", "⢸", "⢹", "⢺", "⢻", "⢼", "⢽", "⢾", "⢿", "⣸", "⣹", "⣺", "⣻", "⣼", "⣽", "⣾", "⣿" };
+    pub const sand = &.{ "⠁", "⠂", "⠄", "⡀", "⡈", "⡐", "⢁", "⡠", "⣀", "⣁", "⣂", "⣄", "⣌", "⣔", "⣤", "⣥", "⣦", "⣮", "⣶", "⣷", "⣿", "⡿", "⠿", "⢟", "⠟", "⡛", "⠛", "⠫", "⢋", "⠋", "⠍", "⡉", "⠉", "⠑", "⠡" };
+    pub const dots_scrolling = &.{ ".  ", ".. ", "...", " ..", "  .", "   " };
+    pub const flip = &.{ "_", "_", "_", "-", "`", "`", "'", "´", "-", "_", "_", "_" };
 
-    pub const aesthetic = &.{ "▰▰▱▱▱▱▱ ", "▰▱▱▱▱▱▱ ", "▰▰▰▱▱▱▱ ", "▰▰▰▰▱▱▱ ", "▰▰▰▰▰▱▱ ", "▰▰▰▰▰▰▱ ", "▰▰▰▰▰▰▰ ", "▰▱▱▱▱▱▱ " };
-    pub const bouncing_ball = &.{ "( ●    ) ", "(  ●   ) ", "(   ●  ) ", "(    ● ) ", "(     ●) ", "(    ● ) ", "(   ●  ) ", "(  ●   ) ", "( ●    ) ", "(●     ) " };
-    pub const bouncing_bar = &.{ "[    ] ", "[=   ] ", "[==  ] ", "[=== ] ", "[ ===] ", "[  ==] ", "[   =] ", "[    ] ", "[   =] ", "[  ==] ", "[ ===] ", "[====] ", "[=== ] ", "[==  ] ", "[=   ] " };
+    pub const aesthetic = &.{ "▰▰▱▱▱▱▱", "▰▱▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰", "▰▱▱▱▱▱▱" };
+    pub const bouncing_ball = &.{ "( ●    )", "(  ●   )", "(   ●  )", "(    ● )", "(     ●)", "(    ● )", "(   ●  )", "(  ●   )", "( ●    )", "(●     )" };
+    pub const bouncing_bar = &.{ "[    ]", "[=   ]", "[==  ]", "[=== ]", "[ ===]", "[  ==]", "[   =]", "[    ]", "[   =]", "[  ==]", "[ ===]", "[====]", "[=== ]", "[==  ]", "[=   ]" };
 
-    pub const toggle = &.{ "◍ ", "◌ " };
-    pub const toggle2 = &.{ "□ ", "■ " };
-    pub const noise = &.{ "▓ ", "▒ ", "░ " };
-    pub const hamburger = &.{ "☱ ", "☲ ", "☴ " };
-    pub const triangle = &.{ "◢ ", "◣ ", "◤ ", "◥ " };
-    pub const box_bounce = &.{ "▌ ", "▀ ", "▐ ", "▄ " };
-    pub const circle_halves = &.{ "◐ ", "◓ ", "◑ ", "◒ " };
-    pub const star = &.{ "✶ ", "✸ ", "✹ ", "✺ ", "✹ ", "✷ " };
-    pub const grow_vertical = &.{ "  ", "▃ ", "▄ ", "▅ ", "▆ ", "▇ ", "▆ ", "▅ ", "▄ ", "▃ " };
+    pub const toggle = &.{ "◍", "◌" };
+    pub const toggle2 = &.{ "□", "■" };
+    pub const noise = &.{ "▓", "▒", "░" };
+    pub const hamburger = &.{ "☱", "☲", "☴" };
+    pub const triangle = &.{ "◢", "◣", "◤", "◥" };
+    pub const box_bounce = &.{ "▌", "▀", "▐", "▄" };
+    pub const circle_halves = &.{ "◐", "◓", "◑", "◒" };
+    pub const star = &.{ "✶", "✸", "✹", "✺", "✹", "✷" };
+    pub const grow_vertical = &.{ " ", "▃", "▄", "▅", "▆", "▇", "▆", "▅", "▄", "▃" };
 
-    pub const earth = &.{ "🌍 ", "🌎 ", "🌏 " };
-    pub const monkey = &.{ "🙈 ", "🙈 ", "🙉 ", "🙊 " };
-    pub const speaker = &.{ "🔈 ", "🔉 ", "🔊 ", "🔉 " };
-    pub const moon = &.{ "🌑 ", "🌒 ", "🌓 ", "🌔 ", "🌕 ", "🌖 ", "🌗 ", "🌘 " };
-    pub const mindblown = &.{ "😐 ", "😐 ", "😮 ", "😮 ", "😦 ", "😦 ", "😧 ", "😧 ", "🤯 ", "💥 ", "✨ " };
-    pub const clock = &.{ "🕛 ", "🕐 ", "🕑 ", "🕒 ", "🕓 ", "🕔 ", "🕕 ", "🕖 ", "🕗 ", "🕘 ", "🕙 ", "🕚 " };
-    pub const weather = &.{ "☀️ ", "☀️ ", "☀️ ", "🌤 ", "⛅️ ", "🌥 ", "☁️ ", "🌧 ", "🌨 ", "🌧 ", "🌨 ", "🌧 ", "🌨 ", "⛈ ", "🌨 ", "🌧 ", "🌨 ", "☁️ ", "🌥 ", "⛅️ ", "🌤 ", "☀️ ", "☀️ " };
+    pub const earth = &.{ "🌍", "🌎", "🌏" };
+    pub const monkey = &.{ "🙈", "🙈", "🙉", "🙊" };
+    pub const speaker = &.{ "🔈", "🔉", "🔊", "🔉" };
+    pub const moon = &.{ "🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘" };
+    pub const mindblown = &.{ "😐", "😐", "😮", "😮", "😦", "😦", "😧", "😧", "🤯", "💥", "✨" };
+    pub const clock = &.{ "🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚" };
+    pub const weather = &.{ "☀️", "☀️", "☀️", "🌤", "⛅️", "🌥", "☁️", "🌧", "🌨", "🌧", "🌨", "🌧", "🌨", "⛈", "🌨", "🌧", "🌨", "☁️", "🌥", "⛅️", "🌤", "☀️", "☀️" };
 };
 
-pub const SpinnerOptions = struct {
+pub const Options = struct {
+    /// Drawn before the message with a space between, e.g. `&.{ "+", "x" }`.
     frames: []const []const u8 = SpinnerStyles.dots,
     refresh_rate_ms: u64 = 80,
 };
@@ -71,7 +72,6 @@ frame_index: usize = 0,
 allocator: Allocator,
 io: Io,
 writer: *Io.Writer,
-reader: *Io.Reader,
 /// The terminal `writer` writes to, or null when it isn't one (pipe, file, test buffer).
 terminal: ?Io.File,
 /// Whether a spinner line is on screen.
@@ -80,17 +80,11 @@ loop: ?Io.Future(void) = null,
 stop_requested: Io.Event = .unset,
 mutex: Io.Mutex = .init,
 
-/// Initiate a new Spinner instance.
-///
-/// If no options are provided `init(..., .{})`, the default spinner will be dots with a 80ms refresh rate.
-///
-/// Use `Spinner.SpinnerStyles.[option]` or pass in `.{ .frames = " []const []const u8 " }` for a custom style.
-///
-pub fn init(io: Io, writer: *Io.Writer, reader: *Io.Reader, allocator: Allocator, options: SpinnerOptions) Spinner {
+/// `.{}` gives `SpinnerStyles.dots` at 80ms.
+pub fn init(io: Io, writer: *Io.Writer, allocator: Allocator, options: Options) Spinner {
     return Spinner{
         .io = io,
         .writer = writer,
-        .reader = reader,
         .allocator = allocator,
         .refresh_rate_ms = options.refresh_rate_ms,
         .frames = normalizeFrames(options.frames),
@@ -115,6 +109,8 @@ pub fn print(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     try self.writer.print(format, args);
 }
 
+/// Spins `format` on a new line, replacing any running spinner. End the line
+/// with `succeed`, `fail`, `warn`, `info` or `preserve`; `stop` erases it.
 pub fn start(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     self.stop();
     try self.updateMessage(format, args);
@@ -144,7 +140,8 @@ pub fn stop(self: *Spinner) void {
     self.writer.flush() catch {};
 }
 
-pub fn updateStyle(self: *Spinner, options: SpinnerOptions) void {
+/// Replaces both frames and refresh rate; omitted fields go back to their defaults.
+pub fn updateStyle(self: *Spinner, options: Options) void {
     self.mutex.lock(self.io) catch return;
     defer self.mutex.unlock(self.io);
 
@@ -176,7 +173,7 @@ pub fn info(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     try self.finalize(styles.BLUE, "i ", format, args);
 }
 
-/// A static line (e.g., a log) that is not part of the active spinner.
+/// Like `succeed`, but a neutral dim `»` line, e.g. for a log.
 pub fn preserve(self: *Spinner, comptime format: []const u8, args: anytype) !void {
     try self.finalize(styles.DIM, "» ", format, args);
 }
@@ -212,7 +209,9 @@ fn spinLoop(self: *Spinner) void {
 
 /// Caller holds `mutex`, or no spin loop is running.
 fn draw(self: *Spinner) void {
-    self.writer.print(clear_line ++ wrap_off ++ "{s}{s}" ++ wrap_on, .{ self.frames[self.frame_index], self.message }) catch {};
+    const frame = self.frames[self.frame_index];
+    const gap = if (frame.len == 0) "" else " ";
+    self.writer.print(clear_line ++ wrap_off ++ "{s}{s}{s}" ++ wrap_on, .{ frame, gap, self.message }) catch {};
     self.writer.flush() catch {};
 }
 

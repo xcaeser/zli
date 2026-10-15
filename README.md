@@ -116,7 +116,7 @@ zig build run -- --verbose greet Ada
 zig build run -- greet Ada --help
 ```
 
-Use `runAndExit` for normal CLI binaries: it prints errors/help and exits with the right process code. Use `execute` when you want library-friendly behavior for tests, embedding, or custom error handling; it returns errors instead of exiting the process.
+Use `runAndExit` for normal CLI binaries: it prints errors/help (including `error: Name` for errors your commands return) and exits with the right process code. `run` does the same but returns the exit code instead of exiting. Use `execute` when you want library-friendly behavior for tests, embedding, or custom error handling; it returns errors instead of exiting the process.
 
 ## 🗂 Folder Structure (but you can do what you want)
 
@@ -283,10 +283,10 @@ fn show(ctx: zli.CommandContext) !void {
 
 Available functions:
 
-- `spinner.start`: to add a new line. sets the spinner to running
-- `spinner.updateStyle`: to update the spinner style
+- `spinner.start`: spins a message on a new line, replacing any running spinner
+- `spinner.updateStyle`: sets the frames and refresh rate (both; an omitted field goes back to its default). Pick frames from `zli.SpinnerStyles` or pass your own: `.{ .frames = &.{ "+", "x" } }`
 - `spinner.updateMessage`: to update text of a running spinner
-- `spinner.succeed`, `fail`, `warn`, `info`, `preserve`: mandatory to complete a line you started. each `spinner.start` needs a `spinner.succeed`, `fail` etc.. spinner after this action is done for that specific line. They also work without a `start`, to print a one-off status line
+- `spinner.succeed`, `fail`, `warn`, `info`, `preserve`: end the line you started with a ✔, ✖, ⚠, i or dim » mark. They also work without a `start`, to print a one-off status line. `spinner.stop` erases the line instead
 - Recommendation: use `spinner.print` instead of your own `writer.print` to not have non-displayed messages as spinner works on its own thread
 - When the output is not a terminal (piped, redirected to a file, CI logs), nothing animates: only the finished lines are printed, without colors or escape codes
 - Ctrl+C while a spinner runs restores the hidden cursor before the process exits
@@ -303,7 +303,7 @@ pub fn run(ctx: zli.CommandContext) !void {
     try spinner.start("Step 1", .{}); // New line
     try ctx.io.sleep(.fromSeconds(2), .awake);
 
-    try spinner.succeed("Step 1 success", .{}); // each start must be closed with succeed, fail, info, preserve
+    try spinner.succeed("Step 1 success", .{}); // end each start with succeed, fail, warn, info or preserve
 
     spinner.updateStyle(.{ .frames = zli.SpinnerStyles.weather, .refresh_rate_ms = 150 }); // many styles available
 
