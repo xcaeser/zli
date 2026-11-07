@@ -181,6 +181,34 @@ test "variadic args and -- separator" {
     try expectRun(&.{ "hello", "echo" }, "");
 }
 
+test "after the first positional, a variadic command takes flag-like words as positionals" {
+    try expectRun(&.{ "hello", "echo", "ls", "-la" }, "[ls][-la]");
+    try expectRun(&.{ "hello", "echo", "cat", "--help" }, "[cat][--help]");
+    try expectRun(&.{ "hello", "echo", "a", "--no-brackets", "-v" }, "[a][--no-brackets][-v]");
+}
+
+test "flags before the first positional of a variadic command still parse" {
+    try expectRun(&.{ "hello", "echo", "--no-brackets", "ls", "-la" }, "ls-la");
+    try expectRun(&.{ "hello", "-v", "echo", "a" }, "[a]");
+    try expectRun(&.{ "hello", "echo", "--", "a", "-b" }, "[a][-b]");
+}
+
+test "help before the first positional of a variadic command still shows help" {
+    for ([_][*:0]const u8{ "--help", "-h" }) |flag| {
+        var h: Harness = undefined;
+        h.init();
+        defer h.deinit();
+        try buildCli(&h);
+        try h.run(&.{ "hello", "echo", flag }, null);
+        try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello echo") != null);
+    }
+}
+
+test "a non-variadic command still parses flags after its positionals" {
+    try expectRun(&.{ "hello", "greet", "Ada", "--times", "2" }, "Hello, Ada!\nHello, Ada!\n");
+    try expectRunError(&.{ "hello", "greet", "Ada", "--nope" }, error.UnknownFlag, "Unknown flag: --nope");
+}
+
 test "negative numbers are positional, not flags" {
     try expectRun(&.{ "hello", "echo", "-5", "-12" }, "[-5][-12]");
     try expectRun(&.{ "hello", "echo", "-1.5", "-9999999999" }, "[-1.5][-9999999999]");

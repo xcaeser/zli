@@ -349,7 +349,7 @@ fn work() u128 {
 - [x] Command aliases
 - [x] Flags & shorthands
 - [x] Type-safe flag values
-- [x] Positional args (required, optional, variadic)
+- [x] Positional args (required, optional, variadic): a variadic command takes every word after its first positional as a positional, flag-like ones included (`app shell ls -la`)
 - [x] Named access: `ctx.getArg("name")`
 - [x] Context data
 - [x] Help/version auto handling
