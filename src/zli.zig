@@ -484,6 +484,11 @@ pub const Command = struct {
         try self.flag_values.put(flag.name, flag_value);
     }
 
+    fn hasVariadicArg(self: *const Command) bool {
+        const expected = self.positional_args.items;
+        return expected.len > 0 and expected[expected.len - 1].variadic;
+    }
+
     fn parsePositionalArgs(self: *Command, args: []const []const u8) CommandParseErrors!void {
         const expected = self.positional_args.items;
 
@@ -514,8 +519,7 @@ pub const Command = struct {
             return CommandErrors.MissingArgs;
         }
 
-        const variadic = expected.len > 0 and expected[expected.len - 1].variadic;
-        if (!variadic and args.len > expected.len) {
+        if (!self.hasVariadicArg() and args.len > expected.len) {
             try self.init_options.writer.print(
                 "Too many positional arguments. Expected at most {}, got {}.\n",
                 .{ expected.len, args.len },
@@ -733,7 +737,8 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
         }
 
         // Words, "", "-" and negative numbers like -5 or -1.5 are subcommands or positional args.
-        if (arg.len < 2 or arg[0] != '-' or std.ascii.isDigit(arg[1])) {
+        // So is everything once a variadic command's positionals have started (`app shell ls -la`).
+        if ((in_positionals and current_cmd.hasVariadicArg()) or arg.len < 2 or arg[0] != '-' or std.ascii.isDigit(arg[1])) {
             if (!in_positionals) {
                 if (current_cmd.findCommand(arg)) |found_cmd| {
                     try found_cmd.checkDeprecated();

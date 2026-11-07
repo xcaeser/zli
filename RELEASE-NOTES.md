@@ -1,3 +1,9 @@
+## zli v6.1.0
+
+### Changed
+
+- A command with a variadic positional argument takes every word after its first positional as a positional, including words that start with `-` or `--`. With a variadic `command` on `app shell`, `app shell ls -la` passes `ls` and `-la`, and `app shell cat --help` passes `cat` and `--help` instead of showing help. Flags before the first positional (`app shell --help`, `app shell -h`) still parse, and commands without a variadic argument are unchanged. To give such a command a flag, put it before the first positional.
+
 ## zli v6.0.0
 
 A major release: a rewritten spinner, a leaner parser and help renderer (src/zli.zig shrinks from 1110 to 834 lines), and 14 bug fixes. It needs Zig 0.17.0, and a few APIs changed (see below).
