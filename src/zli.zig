@@ -179,6 +179,8 @@ pub const CommandOptions = struct {
     aliases: ?[]const []const u8 = null,
     short_description: ?[]const u8 = null,
     help: ?[]const u8 = null,
+    /// Printed last in this command's help, as written. Subcommands don't inherit it.
+    help_footer: ?[]const u8 = null,
     usage: ?[]const u8 = null,
     deprecated: bool = false,
     replaced_by: ?[]const u8 = null,
@@ -432,6 +434,8 @@ pub const Command = struct {
         if (self.flags_by_name.count() > 0) try w.writeByte('\n');
 
         try self.printPositionalArgs();
+
+        if (self.cmd_options.help_footer) |footer| try w.print("{s}\n", .{footer});
     }
 
     pub fn getParents(self: *Command, allocator: Allocator) Allocator.Error!ArrayList(*Command) {

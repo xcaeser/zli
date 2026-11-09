@@ -332,6 +332,44 @@ test "structured help with a custom usage line" {
     , h.output());
 }
 
+test "help footer prints last in the help, whole and as written, and only there" {
+    var h: Harness = undefined;
+    h.init();
+    h.split_errors = true;
+    defer h.deinit();
+    const opts = h.options();
+    const long_line: [5000]u8 = @splat('x');
+    h.root = try zli.Command.init(opts, .{ .name = "app", .description = "App" }, showHelp);
+    const run = try zli.Command.init(opts, .{
+        .name = "run",
+        .description = "Run it",
+        .help_footer = "Docs: https://example.com\n\n" ++ long_line,
+    }, showHelp);
+    try run.addPositionalArg(.{ .name = "file", .description = "Input", .required = true });
+    try h.root.addCommand(run);
+    try h.run(&.{ "app", "run", "--help" }, null);
+    try expectPlain(
+        \\Run it
+        \\
+        \\Usage: app run [options] <file>
+        \\
+        \\Flags:
+        \\   -h, --help     Shows the help for a command [Bool] (default: false)
+        \\
+        \\Arguments:
+        \\   file           Input (required)
+        \\
+        \\Docs: https://example.com
+        \\
+        \\
+    ++ long_line ++ "\n", h.output());
+
+    h.out.clearRetainingCapacity();
+    try testing.expectError(error.UnknownFlag, h.run(&.{ "app", "run", "a.txt", "--bogus" }, null));
+    try testing.expect(std.mem.find(u8, h.err.written(), "Docs:") == null);
+    try testing.expectEqualStrings("", h.output());
+}
+
 test "help pieces can be printed on their own" {
     var h: Harness = undefined;
     h.init();

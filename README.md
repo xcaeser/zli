@@ -21,6 +21,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 - Errors on a separate writer (`error_writer`), help stays on `writer`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
+- Your own message at the end of a command's help (`help_footer`)
 - Spinners for a more interactive experience
 - Usage hints, context-aware
 
@@ -189,6 +190,7 @@ pub fn build(init_options: zli.InitOptions) !*zli.Command {
         .name = "blitz",
         .description = "Your dev toolkit CLI",
         .version = .{ .major = 0, .minor = 0, .patch = 1, .pre = null, .build = null },
+        .help_footer = "Docs: https://example.com/blitz",
     }, showHelp);
 
     try root.addCommands(&.{
