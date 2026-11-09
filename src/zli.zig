@@ -527,6 +527,15 @@ pub const Command = struct {
         try given.value_ptr.append(self.init_options.allocator, value);
     }
 
+    /// Puts every flag back to its default, so each parse starts from a clean command.
+    fn resetFlags(self: *Command) void {
+        var flag_it = self.flags_by_name.valueIterator();
+        while (flag_it.next()) |f| self.flag_values.getPtr(f.name).?.* = f.default_value;
+
+        var given_it = self.flag_args.valueIterator();
+        while (given_it.next()) |given| given.clearRetainingCapacity();
+    }
+
     /// Makes `values` the recorded values of the flag, replacing any recorded before.
     fn replaceFlagArgs(self: *Command, flag_name: []const u8, values: []const []const u8) Allocator.Error!void {
         const given = try self.flag_args.getOrPut(flag_name);
@@ -791,6 +800,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     errdefer current_cmd.flush() catch {};
 
     _ = argsIterator.skip(); // program name
+    self.resetFlags();
 
     var positionals: ArrayList([]const u8) = .empty;
     defer positionals.deinit(allocator);
@@ -811,6 +821,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
             if (!in_positionals) {
                 if (current_cmd.findCommand(arg)) |found_cmd| {
                     try found_cmd.checkDeprecated();
+                    found_cmd.resetFlags();
 
                     // Persistent flags given before the subcommand carry down to it.
                     var flag_it = current_cmd.flags_by_name.valueIterator();

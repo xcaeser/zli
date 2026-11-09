@@ -716,3 +716,25 @@ fn parseRepeatedFlags(allocator: std.mem.Allocator) !void {
     var it = (std.process.Args{ .vector = &.{ "app", "--chain", "a", "sub", "--chain=b", "--chain", "c" } }).iterate();
     try root.execute(&it, .{});
 }
+
+test "each run starts from the flag defaults" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildCli(&h);
+
+    try h.run(&.{ "hello", "-v", "greet", "Ada", "--times", "2" }, null);
+    try testing.expectEqualStrings("Preparing greeting for Ada\nHello, Ada!\nHello, Ada!\n", h.output());
+
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "hello", "greet", "Ada" }, null);
+    try testing.expectEqualStrings("Hello, Ada!\n", h.output());
+
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "hello", "greet", "Ada", "--help" }, null);
+    try testing.expect(std.mem.find(u8, h.output(), "Usage: hello greet") != null);
+
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "hello", "greet", "Ada" }, null);
+    try testing.expectEqualStrings("Hello, Ada!\n", h.output());
+}
