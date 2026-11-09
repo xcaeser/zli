@@ -738,3 +738,22 @@ test "each run starts from the flag defaults" {
     try h.run(&.{ "hello", "greet", "Ada" }, null);
     try testing.expectEqualStrings("Hello, Ada!\n", h.output());
 }
+
+test "addCommand leaves the command with the caller when an allocation fails" {
+    try testing.checkAllAllocationFailures(testing.allocator, addAliasedCommand, .{});
+}
+
+fn addAliasedCommand(allocator: std.mem.Allocator) !void {
+    var out: std.Io.Writer.Discarding = .init(&.{});
+    var in: std.Io.Reader = .fixed("");
+    const opts: zli.InitOptions = .{ .allocator = allocator, .io = testing.io, .writer = &out.writer, .reader = &in };
+    const root = try zli.Command.init(opts, .{ .name = "app", .description = "App" }, showHelp);
+    defer root.deinit();
+    try root.addFlag(.{ .name = "chain", .description = "Chain", .type = .String, .default_value = .{ .String = "" }, .persistent = true });
+
+    const sub = try zli.Command.init(opts, .{ .name = "sub", .description = "Sub", .aliases = &.{ "s1", "s2" }, .shortcut = "x" }, showHelp);
+    root.addCommand(sub) catch |err| {
+        sub.deinit();
+        return err;
+    };
+}

@@ -455,8 +455,12 @@ pub const Command = struct {
         return list;
     }
 
+    /// On error the command is still the caller's to deinit.
     pub fn addCommand(self: *Command, command: *Command) Allocator.Error!void {
-        command.parent = self;
+        const aliases = command.cmd_options.aliases orelse &.{};
+        try self.commands_by_name.ensureUnusedCapacity(1);
+        try self.command_by_aliases.ensureUnusedCapacity(@intCast(aliases.len));
+        try self.commands_by_shortcut.ensureUnusedCapacity(1);
 
         // add persistent flags
         var flag_it = self.flags_by_name.valueIterator();
@@ -464,13 +468,10 @@ pub const Command = struct {
             if (f.persistent) try command.addFlag(f.*);
         }
 
-        try self.commands_by_name.put(command.cmd_options.name, command);
-        if (command.cmd_options.aliases) |aliases| {
-            for (aliases) |alias| {
-                try self.command_by_aliases.put(alias, command);
-            }
-        }
-        if (command.cmd_options.shortcut) |shortcut| try self.commands_by_shortcut.put(shortcut, command);
+        command.parent = self;
+        self.commands_by_name.putAssumeCapacity(command.cmd_options.name, command);
+        for (aliases) |alias| self.command_by_aliases.putAssumeCapacity(alias, command);
+        if (command.cmd_options.shortcut) |shortcut| self.commands_by_shortcut.putAssumeCapacity(shortcut, command);
     }
 
     pub fn addCommands(self: *Command, commands: []const *Command) Allocator.Error!void {
