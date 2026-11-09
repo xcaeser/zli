@@ -261,7 +261,7 @@ fn run(ctx: zli.CommandContext) !void {
     // if you passed data to your root command, you can access it here:
     // const object = ctx.getContextData(type_of_your_data); // can be struct, []const u8, etc., object is a pointer.
 
-};
+}
 ```
 
 ### Version subcommand
