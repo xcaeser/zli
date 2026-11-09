@@ -534,7 +534,8 @@ pub const Command = struct {
 
     /// Whether flag-like words after the first positional are positionals too.
     fn passesThrough(self: *const Command) bool {
-        return self.hasVariadicArg() and self.positional_args.getLast().passthrough;
+        const final = self.positional_args.last() orelse return false;
+        return final.variadic and final.passthrough;
     }
 
     fn parsePositionalArgs(self: *Command, args: []const []const u8) CommandParseErrors!void {
@@ -829,7 +830,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
         } else if (arg[1] == '-') {
             // --name, --name=value or --no-name
             const body = arg[2..];
-            const eq = std.mem.indexOfScalar(u8, body, '=');
+            const eq = std.mem.findScalar(u8, body, '=');
             const name = body[0 .. eq orelse body.len];
 
             if (current_cmd.findFlag(name)) |flag| {

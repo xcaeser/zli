@@ -154,7 +154,7 @@ pub fn updateMessage(self: *Spinner, comptime format: []const u8, args: anytype)
     try self.mutex.lock(self.io);
     defer self.mutex.unlock(self.io);
 
-    self.replaceMessage(try std.fmt.allocPrint(self.allocator, format, args));
+    self.replaceMessage(try self.allocator.print(format, args));
 }
 
 pub fn succeed(self: *Spinner, comptime format: []const u8, args: anytype) !void {

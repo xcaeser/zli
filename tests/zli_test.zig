@@ -135,7 +135,7 @@ fn expectRunError(argv: []const [*:0]const u8, err: anyerror, expected_substring
     defer h.deinit();
     try buildCli(&h);
     try testing.expectError(err, h.run(argv, null));
-    if (std.mem.indexOf(u8, h.output(), expected_substring) == null) {
+    if (std.mem.find(u8, h.output(), expected_substring) == null) {
         std.debug.print("output was:\n{s}\n", .{h.output()});
         return error.TestUnexpectedOutput;
     }
@@ -205,7 +205,7 @@ test "help before the first positional of a variadic command still shows help" {
         defer h.deinit();
         try buildCli(&h);
         try h.run(&.{ "hello", "echo", flag }, null);
-        try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello echo") != null);
+        try testing.expect(std.mem.find(u8, h.output(), "Usage: hello echo") != null);
     }
 }
 
@@ -261,7 +261,7 @@ test "empty argv runs the root command" {
     defer h.deinit();
     try buildCli(&h);
     try h.run(&.{}, null);
-    try testing.expect(std.mem.indexOf(u8, h.output(), "A tiny zli app") != null);
+    try testing.expect(std.mem.find(u8, h.output(), "A tiny zli app") != null);
 }
 
 test "help flag prints help and skips the command" {
@@ -271,10 +271,10 @@ test "help flag prints help and skips the command" {
     try buildCli(&h);
     try h.run(&.{ "hello", "greet", "--help" }, null);
     const out = h.output();
-    try testing.expect(std.mem.indexOf(u8, out, "Usage: hello greet [options] <name>") != null);
-    try testing.expect(std.mem.indexOf(u8, out, "--times") != null);
-    try testing.expect(std.mem.indexOf(u8, out, "--debug") == null); // hidden
-    try testing.expect(std.mem.indexOf(u8, out, "Hello, ") == null);
+    try testing.expect(std.mem.find(u8, out, "Usage: hello greet [options] <name>") != null);
+    try testing.expect(std.mem.find(u8, out, "--times") != null);
+    try testing.expect(std.mem.find(u8, out, "--debug") == null); // hidden
+    try testing.expect(std.mem.find(u8, out, "Hello, ") == null);
 }
 
 test "root help: commands and flags sorted, descriptions in one column, deprecated hidden" {
@@ -397,7 +397,7 @@ fn expectPlain(expected: []const u8, actual: []const u8) !void {
     var i: usize = 0;
     while (i < actual.len) : (i += 1) {
         if (actual[i] == 0x1b) {
-            i = std.mem.indexOfScalarPos(u8, actual, i, 'm').?;
+            i = std.mem.findScalarPos(u8, actual, i, 'm').?;
         } else {
             try plain.append(testing.allocator, actual[i]);
         }
@@ -463,7 +463,7 @@ test "help flag before the subcommand shows the subcommand's help" {
     defer h.deinit();
     try buildCli(&h);
     try h.run(&.{ "hello", "--help", "greet" }, null);
-    try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello greet [options] <name>") != null);
+    try testing.expect(std.mem.find(u8, h.output(), "Usage: hello greet [options] <name>") != null);
 }
 
 test "root without args runs root exec (help)" {
@@ -473,8 +473,8 @@ test "root without args runs root exec (help)" {
     try buildCli(&h);
     try h.run(&.{"hello"}, null);
     const out = h.output();
-    try testing.expect(std.mem.indexOf(u8, out, "A tiny zli app") != null);
-    try testing.expect(std.mem.indexOf(u8, out, "Greet someone") != null);
+    try testing.expect(std.mem.find(u8, out, "A tiny zli app") != null);
+    try testing.expect(std.mem.find(u8, out, "Greet someone") != null);
 }
 
 test "context data reaches the command" {
@@ -618,11 +618,11 @@ test "errors go to error_writer, help stays on writer" {
     h.err.clearRetainingCapacity();
     try testing.expectError(error.CommandDeprecated, h.run(&.{ "hello", "old" }, null));
     try testing.expectEqualStrings("", h.output());
-    try testing.expect(std.mem.indexOf(u8, h.err.written(), "Use 'greet' instead.") != null);
+    try testing.expect(std.mem.find(u8, h.err.written(), "Use 'greet' instead.") != null);
 
     h.err.clearRetainingCapacity();
     try h.run(&.{ "hello", "greet", "--help" }, null);
-    try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello greet") != null);
+    try testing.expect(std.mem.find(u8, h.output(), "Usage: hello greet") != null);
     try testing.expectEqualStrings("", h.err.written());
 }
 
