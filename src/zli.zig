@@ -916,7 +916,11 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     const remaining_args = try positionals.toOwnedSlice(allocator);
     errdefer allocator.free(remaining_args);
 
-    const help_requested = if (current_cmd.flag_values.get("help")) |v| v.Bool else false;
+    // A user may redefine `help` as another type; only a Bool `true` asks for help.
+    const help_requested = switch (current_cmd.flag_values.get("help") orelse FlagValue{ .Bool = false }) {
+        .Bool => |requested| requested,
+        else => false,
+    };
     if (help_requested) {
         try current_cmd.printHelp();
         try current_cmd.init_options.writer.flush();

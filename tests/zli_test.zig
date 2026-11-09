@@ -775,3 +775,22 @@ test "redefining a flag drops the shortcut of its old definition" {
     try h.run(&.{ "app", "-p", "5" }, null);
     try testing.expectEqualStrings("out=5\n", h.output());
 }
+
+fn showHelpTopic(ctx: zli.CommandContext) !void {
+    try ctx.writer.print("topic={s}\n", .{ctx.flag("help", []const u8)});
+}
+
+test "a help flag redefined as a string is an ordinary flag" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.root = try zli.Command.init(h.options(), .{ .name = "app", .description = "App" }, showHelpTopic);
+    try h.root.addFlag(.{ .name = "help", .description = "Topic", .type = .String, .default_value = .{ .String = "none" } });
+
+    try h.run(&.{"app"}, null);
+    try testing.expectEqualStrings("topic=none\n", h.output());
+
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "app", "--help", "flags" }, null);
+    try testing.expectEqualStrings("topic=flags\n", h.output());
+}
