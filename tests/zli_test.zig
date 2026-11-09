@@ -370,6 +370,23 @@ test "help footer prints last in the help, whole and as written, and only there"
     try testing.expectEqualStrings("", h.output());
 }
 
+test "help with every flag hidden has no empty flags gap" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.root = try zli.Command.init(h.options(), .{ .name = "app", .description = "App", .help_footer = "FOOT" }, showHelp);
+    try h.root.addFlag(.{ .name = "help", .description = "Help", .type = .Bool, .default_value = .{ .Bool = false }, .hidden = true });
+    try h.run(&.{"app"}, null);
+    try expectPlain(
+        \\App
+        \\
+        \\Usage: app [options]
+        \\
+        \\FOOT
+        \\
+    , h.output());
+}
+
 test "help pieces can be printed on their own" {
     var h: Harness = undefined;
     h.init();

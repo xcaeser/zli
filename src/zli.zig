@@ -431,7 +431,11 @@ pub const Command = struct {
         try w.writeByte('\n');
 
         try self.printFlags();
-        if (self.flags_by_name.count() > 0) try w.writeByte('\n');
+        var flag_it = self.flags_by_name.valueIterator();
+        const has_flags = while (flag_it.next()) |f| {
+            if (!f.hidden) break true;
+        } else false;
+        if (has_flags) try w.writeByte('\n');
 
         try self.printPositionalArgs();
 
