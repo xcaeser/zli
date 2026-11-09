@@ -138,6 +138,7 @@ pub fn stop(self: *Spinner) void {
     self.active = false;
     self.writer.writeAll(clear_line ++ show_cursor) catch {};
     self.writer.flush() catch {};
+    stopRestoringCursor();
 }
 
 /// Replaces both frames and refresh rate; omitted fields go back to their defaults.
@@ -232,31 +233,47 @@ fn terminalOf(io: Io, writer: *Io.Writer) ?Io.File {
 }
 
 var interrupt_fd: std.atomic.Value(posix.fd_t) = .init(-1);
+/// Whether our SIGINT handler is installed and `prev_interrupt_action` is valid.
 var interrupt_handler_installed: std.atomic.Value(bool) = .init(false);
 var prev_interrupt_action: posix.Sigaction = undefined;
 
-/// Ctrl+C would otherwise kill the process with the cursor still hidden.
-/// Installs, once, a SIGINT handler that shows it again and then passes the
-/// signal on to whatever handled it before.
+/// Ctrl+C would otherwise kill the process with the cursor still hidden. While a
+/// spinner line is on `terminal`, a SIGINT handler shows the cursor again and
+/// then passes the signal on to whatever handled it before.
 fn restoreCursorOnInterrupt(terminal: Io.File) void {
     if (native_os == .windows or native_os == .wasi) return;
 
     interrupt_fd.store(terminal.handle, .monotonic);
-    if (interrupt_handler_installed.swap(true, .monotonic)) return;
+    // Already installed by another spinner: saving again would record our own handler as the previous one.
+    if (interrupt_handler_installed.load(.monotonic)) return;
 
+    posix.sigaction(.INT, null, &prev_interrupt_action);
+    // Leave an ignored SIGINT ignored.
+    if (prev_interrupt_action.handler.handler == posix.SIG.IGN) return;
+
+    interrupt_handler_installed.store(true, .monotonic);
     const action: posix.Sigaction = .{
         .handler = .{ .handler = onInterrupt },
         .mask = posix.sigemptyset(),
         .flags = 0,
     };
-    posix.sigaction(.INT, &action, &prev_interrupt_action);
-    // Leave an ignored SIGINT ignored.
-    if (prev_interrupt_action.handler.handler == posix.SIG.IGN) posix.sigaction(.INT, &prev_interrupt_action, null);
+    posix.sigaction(.INT, &action, null);
 }
 
+/// Puts back the handler `restoreCursorOnInterrupt` replaced, unless a Ctrl+C already did.
+fn stopRestoringCursor() void {
+    if (native_os == .windows or native_os == .wasi) return;
+
+    // The swap keeps this from overwriting a handler the app installed after a Ctrl+C already restored the previous one.
+    if (interrupt_handler_installed.swap(false, .monotonic)) posix.sigaction(.INT, &prev_interrupt_action, null);
+}
+
+/// Runs in signal context: only async-signal-safe calls.
 fn onInterrupt(_: posix.SIG) callconv(.c) void {
     const restore = "\n" ++ show_cursor;
     _ = posix.system.write(interrupt_fd.load(.monotonic), restore, restore.len);
+    // Unconditional: a Ctrl+C landing between stop's swap and its sigaction would otherwise re-raise into this handler forever.
+    interrupt_handler_installed.store(false, .monotonic);
     posix.sigaction(.INT, &prev_interrupt_action, null);
     posix.raise(.INT) catch {};
 }

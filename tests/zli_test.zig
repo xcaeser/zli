@@ -581,6 +581,95 @@ test "spinner without a terminal prints only finished lines" {
     try testing.expectEqualStrings("✔ no start needed\nlog\n✖ step 1 failed\n⚠ careful\n", out.written());
 }
 
+var counted_interrupts: std.atomic.Value(u32) = .init(0);
+
+fn countInterrupt(_: std.posix.SIG) callconv(.c) void {
+    _ = counted_interrupts.fetchAdd(1, .monotonic);
+}
+
+fn appOwnsSigint() bool {
+    var current: std.posix.Sigaction = undefined;
+    std.posix.sigaction(.INT, null, &current);
+    return current.handler.handler == countInterrupt;
+}
+
+/// Reads from `fd` until `needle` shows up in what has arrived or a second passes.
+fn readUntil(fd: std.posix.fd_t, buffer: []u8, needle: []const u8) ![]u8 {
+    var len: usize = 0;
+    var waited_ms: i32 = 0;
+    while (std.mem.find(u8, buffer[0..len], needle) == null and len < buffer.len and waited_ms < 1000) : (waited_ms += 20) {
+        var fds = [_]std.posix.pollfd{.{ .fd = fd, .events = std.posix.POLL.IN, .revents = 0 }};
+        if (try std.posix.poll(&fds, 20) == 0) continue;
+        len += try std.posix.read(fd, buffer[len..]);
+    }
+    return buffer[0..len];
+}
+
+test "spinner on a terminal handles Ctrl+C only while it runs" {
+    const builtin = @import("builtin");
+    if (comptime !builtin.link_libc or builtin.os.tag == .windows or builtin.os.tag == .wasi) return error.SkipZigTest;
+
+    const pty = struct {
+        extern "c" fn posix_openpt(flags: std.c.O) c_int;
+        extern "c" fn grantpt(fd: c_int) c_int;
+        extern "c" fn unlockpt(fd: c_int) c_int;
+        extern "c" fn ptsname(fd: c_int) ?[*:0]const u8;
+    };
+    const master = pty.posix_openpt(.{ .ACCMODE = .RDWR, .NOCTTY = true });
+    if (master < 0) return error.SkipZigTest;
+    const name = if (pty.grantpt(master) == 0 and pty.unlockpt(master) == 0) pty.ptsname(master) else null;
+    const slave = if (name) |path| std.c.open(path, .{ .ACCMODE = .RDWR, .NOCTTY = true }) else -1;
+    if (slave < 0) {
+        _ = std.c.close(master);
+        return error.SkipZigTest;
+    }
+    // Master first: closing the slave with output still unread waits for it to drain.
+    defer _ = std.c.close(slave);
+    defer _ = std.c.close(master);
+
+    var buffer: [256]u8 = undefined;
+    const terminal: std.Io.File = .{ .handle = slave, .flags = .{ .nonblocking = false } };
+    var file_writer = terminal.writerStreaming(testing.io, &buffer);
+    var spinner = zli.Spinner.init(testing.io, &file_writer.interface, testing.allocator, .{});
+    defer spinner.deinit();
+
+    counted_interrupts.store(0, .monotonic);
+    var original: std.posix.Sigaction = undefined;
+    const app_action: std.posix.Sigaction = .{ .handler = .{ .handler = countInterrupt }, .mask = std.posix.sigemptyset(), .flags = 0 };
+    std.posix.sigaction(.INT, &app_action, &original);
+    defer std.posix.sigaction(.INT, &original, null);
+
+    try spinner.start("working", .{});
+    try testing.expect(!appOwnsSigint());
+    spinner.stop();
+    try testing.expect(appOwnsSigint());
+
+    try spinner.start("working", .{});
+    try std.posix.raise(.INT);
+    try testing.expectEqual(1, counted_interrupts.load(.monotonic));
+    var output: [1024]u8 = undefined;
+    try testing.expect(std.mem.find(u8, try readUntil(master, &output, "\n\x1b[?25h"), "\n\x1b[?25h") != null);
+    // The Ctrl+C already gave the app its handler back; stopping must leave it be.
+    try testing.expect(appOwnsSigint());
+    spinner.stop();
+    try testing.expect(appOwnsSigint());
+
+    try spinner.start("again", .{});
+    try testing.expect(!appOwnsSigint());
+    spinner.stop();
+    try testing.expect(appOwnsSigint());
+
+    // A second spinner starting while one runs must not record our own handler as the app's.
+    var second = zli.Spinner.init(testing.io, &file_writer.interface, testing.allocator, .{});
+    defer second.deinit();
+    try spinner.start("first", .{});
+    try second.start("second", .{});
+    second.stop();
+    try testing.expect(appOwnsSigint());
+    spinner.stop();
+    try testing.expect(appOwnsSigint());
+}
+
 /// An `app report` command whose variadic words keep parsing flags (`passthrough = false`),
 /// printing the words and then every flag the command line gave, with each recorded value.
 fn buildReportCli(h: *Harness) !void {
