@@ -86,6 +86,10 @@ pub const PositionalArg = struct {
     description: []const u8,
     required: bool,
     variadic: bool = false,
+    /// Only for a variadic arg. When true, every word after the command's first positional is a
+    /// positional, flag-like words included (`app shell ls -la`). When false, flags keep parsing
+    /// after positionals until `--` (`app merge a.pdf b.pdf -o out.pdf`).
+    passthrough: bool = true,
 };
 
 const DataContext = struct {
@@ -107,8 +111,7 @@ pub const CommandContext = struct {
 
     /// Returns the flag's value as `T`. Ints out of range for `T` saturate (e.g. -1 as u32 is 0); an undefined flag name panics.
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
-        const found = self.command.findFlag(flag_name) orelse
-            std.debug.panic("zli: flag '{s}' is not defined on command '{s}'", .{ flag_name, self.command.cmd_options.name });
+        const found = self.definedFlag(flag_name);
 
         // Every flag gets its default in `flag_values` when added, keyed by name.
         return switch (self.command.flag_values.get(found.name).?) {
@@ -116,6 +119,25 @@ pub const CommandContext = struct {
             .Int => |i| if (@typeInfo(T) == .int) std.math.lossyCast(T, i) else getDefaultValue(T),
             .String => |s| if (T == []const u8) s else getDefaultValue(T),
         };
+    }
+
+    /// Every value the flag was given on the command line, in order and as written: `--chain a --chain b`
+    /// gives "a", "b"; `--verbose` gives "true" and `--no-verbose` gives "false". Empty if the flag was not
+    /// given. Accepts the name or the shortcut; an undefined flag name panics.
+    pub fn flagValues(self: *const CommandContext, flag_name: []const u8) []const []const u8 {
+        const given = self.command.flag_args.get(self.definedFlag(flag_name).name) orelse return &.{};
+        return given.items;
+    }
+
+    /// Whether the command line gave the flag in any form (`--no-x` and `--x=` included), as opposed to
+    /// leaving it at its default. An undefined flag name panics.
+    pub fn isFlagSet(self: *const CommandContext, flag_name: []const u8) bool {
+        return self.flagValues(flag_name).len > 0;
+    }
+
+    fn definedFlag(self: *const CommandContext, flag_name: []const u8) Flag {
+        return self.command.findFlag(flag_name) orelse
+            std.debug.panic("zli: flag '{s}' is not defined on command '{s}'", .{ flag_name, self.command.cmd_options.name });
     }
 
     fn getDefaultValue(comptime T: type) T {
@@ -167,6 +189,8 @@ pub const InitOptions = struct {
     writer: *Io.Writer,
     reader: *Io.Reader,
     allocator: Allocator,
+    /// Where parse errors, deprecation notices and `run`'s `error: Name` line go. Null means `writer`.
+    error_writer: ?*Io.Writer = null,
 };
 
 /// Represents a single command in the Command Line Interface (CLI),
@@ -180,6 +204,8 @@ pub const Command = struct {
     flags_by_name: StringHashMap(Flag),
     flags_by_shortcut: StringHashMap(Flag),
     flag_values: StringHashMap(FlagValue),
+    /// Every value text each flag was given, in order, keyed by flag name.
+    flag_args: StringHashMap(ArrayList([]const u8)),
 
     positional_args: ArrayList(PositionalArg),
 
@@ -204,6 +230,7 @@ pub const Command = struct {
             .flags_by_name = StringHashMap(Flag).init(init_opts.allocator),
             .flags_by_shortcut = StringHashMap(Flag).init(init_opts.allocator),
             .flag_values = StringHashMap(FlagValue).init(init_opts.allocator),
+            .flag_args = StringHashMap(ArrayList([]const u8)).init(init_opts.allocator),
             .commands_by_name = StringHashMap(*Command).init(init_opts.allocator),
             .commands_by_shortcut = StringHashMap(*Command).init(init_opts.allocator),
             .command_by_aliases = StringHashMap(*Command).init(init_opts.allocator),
@@ -230,6 +257,10 @@ pub const Command = struct {
         self.flags_by_name.deinit();
         self.flags_by_shortcut.deinit();
         self.flag_values.deinit();
+
+        var given_it = self.flag_args.valueIterator();
+        while (given_it.next()) |given| given.deinit(self.init_options.allocator);
+        self.flag_args.deinit();
 
         var it = self.commands_by_name.valueIterator();
         while (it.next()) |cmd| {
@@ -442,8 +473,8 @@ pub const Command = struct {
         if (self.positional_args.items.len > 0) {
             const last_arg = self.positional_args.items[self.positional_args.items.len - 1];
             if (last_arg.variadic) {
-                try self.init_options.writer.print("Variadic args should only appear at the end.\n", .{});
-                try self.init_options.writer.flush();
+                try self.errorWriter().print("Variadic args should only appear at the end.\n", .{});
+                try self.flush();
                 return CommandErrors.InvalidPositionalArgOrder;
             }
         }
@@ -477,16 +508,33 @@ pub const Command = struct {
 
     fn setFlagValue(self: *Command, flag: Flag, value: []const u8) CommandParseErrors!void {
         const flag_value = flag.evaluateValue(value) catch {
-            try self.init_options.writer.print("Invalid value for flag --{s}: '{s}'\nExpected a value of type: {t}\n", .{ flag.name, value, flag.type });
+            try self.errorWriter().print("Invalid value for flag --{s}: '{s}'\nExpected a value of type: {t}\n", .{ flag.name, value, flag.type });
             try self.displayCommandError();
             return CommandErrors.InvalidFlagValue;
         };
         try self.flag_values.put(flag.name, flag_value);
+
+        const given = try self.flag_args.getOrPut(flag.name);
+        if (!given.found_existing) given.value_ptr.* = .empty;
+        try given.value_ptr.append(self.init_options.allocator, value);
+    }
+
+    /// Makes `values` the recorded values of the flag, replacing any recorded before.
+    fn replaceFlagArgs(self: *Command, flag_name: []const u8, values: []const []const u8) Allocator.Error!void {
+        const given = try self.flag_args.getOrPut(flag_name);
+        if (!given.found_existing) given.value_ptr.* = .empty;
+        given.value_ptr.clearRetainingCapacity();
+        try given.value_ptr.appendSlice(self.init_options.allocator, values);
     }
 
     fn hasVariadicArg(self: *const Command) bool {
         const expected = self.positional_args.items;
         return expected.len > 0 and expected[expected.len - 1].variadic;
+    }
+
+    /// Whether flag-like words after the first positional are positionals too.
+    fn passesThrough(self: *const Command) bool {
+        return self.hasVariadicArg() and self.positional_args.getLast().passthrough;
     }
 
     fn parsePositionalArgs(self: *Command, args: []const []const u8) CommandParseErrors!void {
@@ -500,7 +548,7 @@ pub const Command = struct {
         if (args.len < required_count) {
             const missing_count = required_count - args.len;
 
-            try self.init_options.writer.print(
+            try self.errorWriter().print(
                 "Missing {} positional argument(s).\n\nExpected: ",
                 .{missing_count},
             );
@@ -508,19 +556,19 @@ pub const Command = struct {
             var first = true;
             for (expected) |arg| {
                 if (arg.required) {
-                    if (!first) try self.init_options.writer.print(", ", .{});
-                    try self.init_options.writer.print("{s}", .{arg.name});
+                    if (!first) try self.errorWriter().print(", ", .{});
+                    try self.errorWriter().print("{s}", .{arg.name});
                     first = false;
                 }
             }
 
-            try self.init_options.writer.print("\n", .{});
+            try self.errorWriter().print("\n", .{});
             try self.displayCommandError();
             return CommandErrors.MissingArgs;
         }
 
         if (!self.hasVariadicArg() and args.len > expected.len) {
-            try self.init_options.writer.print(
+            try self.errorWriter().print(
                 "Too many positional arguments. Expected at most {}, got {}.\n",
                 .{ expected.len, args.len },
             );
@@ -539,13 +587,13 @@ pub const Command = struct {
     fn checkDeprecated(self: *const Command) CommandParseErrors!void {
         if (self.cmd_options.deprecated) {
             if (self.cmd_options.version) |version| {
-                try self.init_options.writer.print("'{s}' v{f} is deprecated\n", .{ self.cmd_options.name, version });
+                try self.errorWriter().print("'{s}' v{f} is deprecated\n", .{ self.cmd_options.name, version });
             } else {
-                try self.init_options.writer.print("'{s}' is deprecated\n", .{self.cmd_options.name});
+                try self.errorWriter().print("'{s}' is deprecated\n", .{self.cmd_options.name});
             }
 
             if (self.cmd_options.replaced_by) |new_cmd_name| {
-                try self.init_options.writer.print("\nUse '{s}' instead.\n", .{new_cmd_name});
+                try self.errorWriter().print("\nUse '{s}' instead.\n", .{new_cmd_name});
             }
 
             return CommandErrors.CommandDeprecated;
@@ -599,18 +647,30 @@ pub const Command = struct {
 
     /// Like `runAndExit`, but returns the exit code instead of exiting: 0 on success, 1 on error.
     /// zli's own `CommandErrors` already printed their message; any other error, such as one
-    /// returned by the command's exec function, is printed as `error: Name`. Flushes the writer.
+    /// returned by the command's exec function, is printed as `error: Name`. Flushes the writers.
     pub fn run(self: *Command, argsIterator: *std.process.Args.Iterator, context: DataContext) u8 {
-        defer self.init_options.writer.flush() catch {};
+        defer self.flush() catch {};
         self.execute(argsIterator, context) catch |err| {
-            if (!isCommandError(err)) self.init_options.writer.print("error: {s}\n", .{@errorName(err)}) catch {};
+            if (!isCommandError(err)) self.errorWriter().print("error: {s}\n", .{@errorName(err)}) catch {};
             return 1;
         };
         return 0;
     }
 
+    fn errorWriter(self: *const Command) *Io.Writer {
+        return self.init_options.error_writer orelse self.init_options.writer;
+    }
+
+    /// Flushes `writer` and, when it is a different writer, `error_writer`. Both are tried; the first error is returned.
+    fn flush(self: *const Command) Io.Writer.Error!void {
+        const out = self.init_options.writer.flush();
+        const err_writer = self.errorWriter();
+        if (err_writer != self.init_options.writer) try err_writer.flush();
+        return out;
+    }
+
     fn displayCommandError(self: *const Command) Io.Writer.Error!void {
-        const w = self.init_options.writer;
+        const w = self.errorWriter();
         try w.writeAll("\nRun: '");
         try self.printPath(w);
         try w.writeAll(" --help'\n");
@@ -719,7 +779,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     var current_cmd = self;
     const allocator = self.init_options.allocator;
     // Callers that `try execute(...)` skip their own flush on error, so get the message out here.
-    errdefer current_cmd.init_options.writer.flush() catch {};
+    errdefer current_cmd.flush() catch {};
 
     _ = argsIterator.skip(); // program name
 
@@ -729,7 +789,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     var in_positionals = false;
 
     while (argsIterator.next()) |arg| {
-        const writer = current_cmd.init_options.writer;
+        const error_writer = current_cmd.errorWriter();
 
         if (std.mem.eql(u8, arg, "--")) {
             while (argsIterator.next()) |rest| try positionals.append(allocator, rest);
@@ -738,7 +798,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
 
         // Words, "", "-" and negative numbers like -5 or -1.5 are subcommands or positional args.
         // So is everything once a variadic command's positionals have started (`app shell ls -la`).
-        if ((in_positionals and current_cmd.hasVariadicArg()) or arg.len < 2 or arg[0] != '-' or std.ascii.isDigit(arg[1])) {
+        if ((in_positionals and current_cmd.passesThrough()) or arg.len < 2 or arg[0] != '-' or std.ascii.isDigit(arg[1])) {
             if (!in_positionals) {
                 if (current_cmd.findCommand(arg)) |found_cmd| {
                     try found_cmd.checkDeprecated();
@@ -746,7 +806,9 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                     // Persistent flags given before the subcommand carry down to it.
                     var flag_it = current_cmd.flags_by_name.valueIterator();
                     while (flag_it.next()) |f| {
-                        if (f.persistent) try found_cmd.flag_values.put(f.name, current_cmd.flag_values.get(f.name).?);
+                        if (!f.persistent) continue;
+                        try found_cmd.flag_values.put(f.name, current_cmd.flag_values.get(f.name).?);
+                        if (current_cmd.flag_args.get(f.name)) |given| try found_cmd.replaceFlagArgs(f.name, given.items);
                     }
 
                     current_cmd = found_cmd;
@@ -754,7 +816,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 }
 
                 if (current_cmd.positional_args.items.len == 0) {
-                    try writer.print("Unknown command: '{s}'\n", .{arg});
+                    try error_writer.print("Unknown command: '{s}'\n", .{arg});
                     try current_cmd.displayCommandError();
                     return CommandErrors.UnknownCommand;
                 }
@@ -774,10 +836,10 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 if (eq) |i| {
                     try current_cmd.setFlagValue(flag, body[i + 1 ..]);
                 } else if (flag.type == .Bool) {
-                    try current_cmd.flag_values.put(flag.name, .{ .Bool = true });
+                    try current_cmd.setFlagValue(flag, "true");
                 } else {
                     const value = argsIterator.next() orelse {
-                        try writer.print("Missing value for flag --{s} of type: {t}\n", .{ flag.name, flag.type });
+                        try error_writer.print("Missing value for flag --{s} of type: {t}\n", .{ flag.name, flag.type });
                         try current_cmd.displayCommandError();
                         return CommandErrors.MissingFlagValue;
                     };
@@ -789,32 +851,32 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
             // Tried after the full name, so a flag named like "no-cache" still works.
             const negated = if (eq == null and std.mem.startsWith(u8, name, "no-")) current_cmd.findFlag(name["no-".len..]) else null;
             const flag = negated orelse {
-                try writer.print("Unknown flag: --{s}\n", .{body});
+                try error_writer.print("Unknown flag: --{s}\n", .{body});
                 try current_cmd.displayCommandError();
                 return CommandErrors.UnknownFlag;
             };
             if (flag.type != .Bool) {
-                try writer.print("Flag --{s} does not accept negation as it expects type: {t}\n", .{ flag.name, flag.type });
+                try error_writer.print("Flag --{s} does not accept negation as it expects type: {t}\n", .{ flag.name, flag.type });
                 return CommandErrors.InvalidFlagNegation;
             }
-            try current_cmd.flag_values.put(flag.name, .{ .Bool = false });
+            try current_cmd.setFlagValue(flag, "false");
         } else {
             // -v, or a group like -vt 2 where only the last shortcut may take a value
             const shortcuts = arg[1..];
             for (shortcuts, 0..) |c, i| {
                 const flag = current_cmd.findFlag(shortcuts[i .. i + 1]) orelse {
-                    try writer.print("Unknown flag shortcut: -{c}\n", .{c});
+                    try error_writer.print("Unknown flag shortcut: -{c}\n", .{c});
                     try current_cmd.displayCommandError();
                     return CommandErrors.UnknownFlag;
                 };
                 if (flag.type == .Bool) {
-                    try current_cmd.flag_values.put(flag.name, .{ .Bool = true });
+                    try current_cmd.setFlagValue(flag, "true");
                 } else if (i < shortcuts.len - 1) {
-                    try writer.print("Flag -{c} ({s}) must be last in group since it expects a value of type: {t}\n", .{ c, flag.name, flag.type });
+                    try error_writer.print("Flag -{c} ({s}) must be last in group since it expects a value of type: {t}\n", .{ c, flag.name, flag.type });
                     return CommandErrors.InvalidFlagShortcut;
                 } else {
                     const value = argsIterator.next() orelse {
-                        try writer.print("Missing value for flag -{c} ({s}) of type: {t}\n", .{ c, flag.name, flag.type });
+                        try error_writer.print("Missing value for flag -{c} ({s}) of type: {t}\n", .{ c, flag.name, flag.type });
                         try current_cmd.displayCommandError();
                         return CommandErrors.MissingFlagValue;
                     };

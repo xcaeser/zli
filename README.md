@@ -16,6 +16,9 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 - Fast flag parsing (`--flag`, `--flag=value`, shorthand `-abc`)
 - Type-safe support for `bool`, `int`, `string`
 - Named positional arguments with `required`, `optional`, `variadic`
+- Variadic args can keep parsing flags after the positionals (`passthrough = false`)
+- Repeated flags (`ctx.flagValues`) and given-vs-default (`ctx.isFlagSet`)
+- Errors on a separate writer (`error_writer`), help stays on `writer`
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
 - Spinners for a more interactive experience

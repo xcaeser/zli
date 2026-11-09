@@ -11,16 +11,20 @@ const zli = @import("zli");
 /// Captures everything the CLI prints and owns the command tree.
 const Harness = struct {
     out: std.Io.Writer.Allocating,
+    /// Receives errors when `split_errors` is set before the tree is built.
+    err: std.Io.Writer.Allocating,
+    split_errors: bool = false,
     in: std.Io.Reader,
     root: *zli.Command = undefined,
 
     fn init(self: *Harness) void {
-        self.* = .{ .out = .init(testing.allocator), .in = .fixed("") };
+        self.* = .{ .out = .init(testing.allocator), .err = .init(testing.allocator), .in = .fixed("") };
     }
 
     fn deinit(self: *Harness) void {
         self.root.deinit();
         self.out.deinit();
+        self.err.deinit();
     }
 
     fn options(self: *Harness) zli.InitOptions {
@@ -29,6 +33,7 @@ const Harness = struct {
             .io = testing.io,
             .writer = &self.out.writer,
             .reader = &self.in,
+            .error_writer = if (self.split_errors) &self.err.writer else null,
         };
     }
 
@@ -519,4 +524,140 @@ test "spinner without a terminal prints only finished lines" {
     try spinner.warn("careful", .{});
 
     try testing.expectEqualStrings("✔ no start needed\nlog\n✖ step 1 failed\n⚠ careful\n", out.written());
+}
+
+/// An `app report` command whose variadic words keep parsing flags (`passthrough = false`),
+/// printing the words and then every flag the command line gave, with each recorded value.
+fn buildReportCli(h: *Harness) !void {
+    const opts = h.options();
+    h.root = try zli.Command.init(opts, .{ .name = "app", .description = "App" }, showHelp);
+    try h.root.addFlag(.{ .name = "verbose", .shortcut = "v", .description = "More", .type = .Bool, .default_value = .{ .Bool = false }, .persistent = true });
+
+    const report = try zli.Command.init(opts, .{ .name = "report", .description = "Report flags" }, reportFlags);
+    try report.addPositionalArg(.{ .name = "words", .description = "Words", .required = false, .variadic = true, .passthrough = false });
+    try report.addFlags(&.{
+        .{ .name = "output", .shortcut = "o", .description = "Output", .type = .String, .default_value = .{ .String = "" } },
+        .{ .name = "chain", .description = "Chain", .type = .String, .default_value = .{ .String = "" } },
+        .{ .name = "greeting", .description = "Greeting", .type = .String, .default_value = .{ .String = "Hello" } },
+        .{ .name = "cache", .description = "Cache", .type = .Bool, .default_value = .{ .Bool = true } },
+    });
+    try h.root.addCommand(report);
+}
+
+fn reportFlags(ctx: zli.CommandContext) !void {
+    try ctx.writer.writeAll("words:");
+    for (ctx.positional_args) |w| try ctx.writer.print(" {s}", .{w});
+    for ([_][]const u8{ "o", "chain", "greeting", "cache", "verbose" }) |name| {
+        if (!ctx.isFlagSet(name)) continue;
+        try ctx.writer.print("\n{s}:", .{name});
+        for (ctx.flagValues(name)) |value| try ctx.writer.print(" [{s}]", .{value});
+    }
+    try ctx.writer.writeByte('\n');
+}
+
+fn expectReport(argv: []const [*:0]const u8, expected: []const u8) !void {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildReportCli(&h);
+    try h.run(argv, null);
+    try testing.expectEqualStrings(expected, h.output());
+}
+
+test "passthrough = false keeps parsing flags after the variadic positionals" {
+    try expectReport(&.{ "app", "report", "a", "-v", "b", "-o", "out.pdf" }, "words: a b\no: [out.pdf]\nverbose: [true]\n");
+    try expectReport(&.{ "app", "report", "a", "--output=out.pdf", "b" }, "words: a b\no: [out.pdf]\n");
+}
+
+test "passthrough = false still takes words after -- as positionals" {
+    try expectReport(&.{ "app", "report", "a", "--", "-o", "b" }, "words: a -o b\n");
+}
+
+test "passthrough = false rejects an unknown flag after the positionals" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildReportCli(&h);
+    try testing.expectError(error.UnknownFlag, h.run(&.{ "app", "report", "a", "--nope" }, null));
+}
+
+test "flagValues lists every value of a repeated flag in order" {
+    try expectReport(
+        &.{ "app", "report", "--chain", "a.pem", "x", "--chain=b.pem", "-o", "out", "--chain", "c.pem" },
+        "words: x\no: [out]\nchain: [a.pem] [b.pem] [c.pem]\n",
+    );
+}
+
+test "a flag given empty is set, a flag not given is not" {
+    try expectReport(&.{ "app", "report", "--greeting=" }, "words:\ngreeting: []\n");
+    try expectReport(&.{ "app", "report" }, "words:\n");
+}
+
+test "bool flags record true, false, or the text after =" {
+    try expectReport(&.{ "app", "report", "--no-cache" }, "words:\ncache: [false]\n");
+    try expectReport(&.{ "app", "report", "--cache=false", "--cache" }, "words:\ncache: [false] [true]\n");
+    try expectReport(&.{ "app", "report", "-v" }, "words:\nverbose: [true]\n");
+}
+
+test "a persistent flag given before the subcommand is set in it" {
+    try expectReport(&.{ "app", "-v", "report" }, "words:\nverbose: [true]\n");
+    try expectReport(&.{ "app", "-v", "report", "--no-verbose" }, "words:\nverbose: [true] [false]\n");
+}
+
+test "errors go to error_writer, help stays on writer" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.split_errors = true;
+    try buildCli(&h);
+
+    try testing.expectError(error.UnknownFlag, h.run(&.{ "hello", "greet", "Ada", "--nope" }, null));
+    try testing.expectEqualStrings("", h.output());
+    try testing.expectEqualStrings("Unknown flag: --nope\n\nRun: 'hello greet --help'\n", h.err.written());
+
+    h.err.clearRetainingCapacity();
+    try testing.expectError(error.CommandDeprecated, h.run(&.{ "hello", "old" }, null));
+    try testing.expectEqualStrings("", h.output());
+    try testing.expect(std.mem.indexOf(u8, h.err.written(), "Use 'greet' instead.") != null);
+
+    h.err.clearRetainingCapacity();
+    try h.run(&.{ "hello", "greet", "--help" }, null);
+    try testing.expect(std.mem.indexOf(u8, h.output(), "Usage: hello greet") != null);
+    try testing.expectEqualStrings("", h.err.written());
+}
+
+test "run prints error: Name on error_writer" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.split_errors = true;
+    h.root = try zli.Command.init(h.options(), .{ .name = "app", .description = "App" }, failOnArg);
+    try h.root.addPositionalArg(.{ .name = "what", .description = "", .required = false });
+
+    var failing = (std.process.Args{ .vector = &.{ "app", "fail" } }).iterate();
+    try testing.expectEqual(1, h.root.run(&failing, .{}));
+    try testing.expectEqualStrings("", h.output());
+    try testing.expectEqualStrings("error: DiskFull\n", h.err.written());
+}
+
+test "parsing repeated and persistent flags frees everything when an allocation fails" {
+    try testing.checkAllAllocationFailures(testing.allocator, parseRepeatedFlags, .{});
+}
+
+fn parseRepeatedFlags(allocator: std.mem.Allocator) !void {
+    var out: std.Io.Writer.Discarding = .init(&.{});
+    var in: std.Io.Reader = .fixed("");
+    const opts: zli.InitOptions = .{ .allocator = allocator, .io = testing.io, .writer = &out.writer, .reader = &in };
+    const root = try zli.Command.init(opts, .{ .name = "app", .description = "App" }, showHelp);
+    defer root.deinit();
+    try root.addFlag(.{ .name = "chain", .description = "Chain", .type = .String, .default_value = .{ .String = "" }, .persistent = true });
+
+    const sub = try zli.Command.init(opts, .{ .name = "sub", .description = "Sub" }, showHelp);
+    root.addCommand(sub) catch |err| {
+        sub.deinit();
+        return err;
+    };
+
+    var it = (std.process.Args{ .vector = &.{ "app", "--chain", "a", "sub", "--chain=b", "--chain", "c" } }).iterate();
+    try root.execute(&it, .{});
 }
