@@ -939,3 +939,111 @@ test "a help flag redefined as a string is an ordinary flag" {
     try h.run(&.{ "app", "--help", "flags" }, null);
     try testing.expectEqualStrings("topic=flags\n", h.output());
 }
+
+/// `app` has a persistent Bool `level` and a persistent `-v, --verbose`; `app sub` defines its own
+/// Int `level` (default 7), added before or after `sub` joins the tree. `sub` has a subcommand `leaf`.
+fn buildShadowCli(h: *Harness, sub_flag_first: bool) !void {
+    const opts = h.options();
+    h.root = try zli.Command.init(opts, .{ .name = "app", .description = "App" }, showHelp);
+    const sub = try zli.Command.init(opts, .{ .name = "sub", .description = "Sub" }, showLevel);
+    const leaf = try zli.Command.init(opts, .{ .name = "leaf", .description = "Leaf" }, showVerbose);
+    try sub.addCommand(leaf);
+
+    const sub_level: zli.Flag = .{ .name = "level", .description = "Sub level", .type = .Int, .default_value = .{ .Int = 7 } };
+    if (sub_flag_first) try sub.addFlag(sub_level);
+    try h.root.addCommand(sub);
+    if (!sub_flag_first) try sub.addFlag(sub_level);
+
+    try h.root.addFlag(.{ .name = "level", .description = "Root level", .type = .Bool, .default_value = .{ .Bool = false }, .persistent = true });
+    try h.root.addFlag(.{ .name = "verbose", .shortcut = "v", .description = "More", .type = .Bool, .default_value = .{ .Bool = false }, .persistent = true });
+}
+
+fn showLevel(ctx: zli.CommandContext) !void {
+    try ctx.writer.print("level={d} set={}\n", .{ ctx.flag("level", i32), ctx.isFlagSet("level") });
+}
+
+fn showVerbose(ctx: zli.CommandContext) !void {
+    try ctx.writer.print("verbose={} set={}", .{ ctx.flag("verbose", bool), ctx.isFlagSet("v") });
+    for (ctx.flagValues("verbose")) |value| try ctx.writer.print(" [{s}]", .{value});
+    try ctx.writer.writeByte('\n');
+}
+
+fn expectShadow(sub_flag_first: bool, argv: []const [*:0]const u8, expected: []const u8) !void {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try buildShadowCli(&h, sub_flag_first);
+    try h.run(argv, null);
+    try testing.expectEqualStrings(expected, h.output());
+}
+
+test "a subcommand's own flag wins over a persistent flag of the same name, whatever the definition order" {
+    for ([_]bool{ true, false }) |sub_flag_first| {
+        try expectShadow(sub_flag_first, &.{ "app", "sub" }, "level=7 set=false\n");
+        try expectShadow(sub_flag_first, &.{ "app", "--level", "sub" }, "level=7 set=false\n");
+        try expectShadow(sub_flag_first, &.{ "app", "sub", "--level", "3" }, "level=3 set=true\n");
+    }
+}
+
+test "help lists a shadowed persistent flag once, as the subcommand's, with the other persistent flags" {
+    for ([_]bool{ true, false }) |sub_flag_first| {
+        var h: Harness = undefined;
+        h.init();
+        defer h.deinit();
+        try buildShadowCli(&h, sub_flag_first);
+        try h.run(&.{ "app", "sub", "--help" }, null);
+
+        const help = h.output();
+        const first = std.mem.find(u8, help, "--level") orelse return error.TestUnexpectedOutput;
+        try testing.expectEqual(null, std.mem.findPos(u8, help, first + 1, "--level"));
+        try testing.expect(std.mem.findPos(u8, help, first, "[Int] (default: 7)") != null);
+        try testing.expect(std.mem.find(u8, help, "-v, --verbose") != null);
+    }
+}
+
+test "a persistent flag added to the root later is read by a grandchild, given before or after the subcommands" {
+    try expectShadow(true, &.{ "app", "-v", "sub", "leaf" }, "verbose=true set=true [true]\n");
+    try expectShadow(true, &.{ "app", "sub", "leaf", "-v" }, "verbose=true set=true [true]\n");
+    try expectShadow(true, &.{ "app", "sub", "leaf" }, "verbose=false set=false\n");
+}
+
+test "an ancestor's persistent shortcut is not reachable once a closer command defines the flag name" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.root = try newCommand(&h, "app");
+    try h.root.addFlag(.{ .name = "level", .shortcut = "l", .description = "Root level", .type = .Bool, .default_value = .{ .Bool = false }, .persistent = true });
+    const sub = try zli.Command.init(h.options(), .{ .name = "sub", .description = "Sub" }, showLevel);
+    try sub.addFlag(.{ .name = "level", .description = "Sub level", .type = .Int, .default_value = .{ .Int = 7 } });
+    try h.root.addCommand(sub);
+
+    try testing.expectError(error.UnknownFlag, h.run(&.{ "app", "sub", "-l" }, null));
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "app", "-l", "sub" }, null);
+    try testing.expectEqualStrings("level=7 set=false\n", h.output());
+}
+
+test "executing a subcommand directly starts its ancestors from their defaults" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.root = try newCommand(&h, "app");
+    const sub = try zli.Command.init(h.options(), .{ .name = "sub", .description = "Sub" }, showVerbose);
+    try h.root.addCommand(sub);
+    try h.root.addFlag(.{ .name = "verbose", .shortcut = "v", .description = "More", .type = .Bool, .default_value = .{ .Bool = false }, .persistent = true });
+
+    try h.run(&.{ "app", "-v" }, null);
+    h.out.clearRetainingCapacity();
+    var it = (std.process.Args{ .vector = &.{"sub"} }).iterate();
+    try sub.execute(&it, .{});
+    try h.out.writer.flush();
+    try testing.expectEqualStrings("verbose=false set=false\n", h.output());
+
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "app", "--help" }, null);
+    h.out.clearRetainingCapacity();
+    it = (std.process.Args{ .vector = &.{"sub"} }).iterate();
+    try sub.execute(&it, .{});
+    try h.out.writer.flush();
+    try testing.expectEqualStrings("verbose=false set=false\n", h.output());
+}

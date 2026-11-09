@@ -64,6 +64,7 @@ pub const Flag = struct {
     type: FlagType,
     default_value: FlagValue,
     hidden: bool = false,
+    /// Also available to every descendant unless it, or a command between it and this one, defines a flag of the same name.
     persistent: bool = false,
 
     pub fn evaluateValue(self: *const Flag, value: []const u8) CommandErrors!FlagValue {
@@ -76,6 +77,32 @@ pub const Flag = struct {
             .Int => FlagValue{ .Int = std.fmt.parseInt(i32, value, 10) catch return CommandErrors.InvalidFlagValue },
             .String => FlagValue{ .String = value },
         };
+    }
+};
+
+/// A flag as a command sees it, with the command that declares it and holds its values.
+const FoundFlag = struct {
+    owner: *Command,
+    flag: Flag,
+};
+
+/// Iterates `Command.visibleFlags`.
+const VisibleFlags = struct {
+    command: *const Command,
+    /// The command whose flags `flags` is walking: `command`, then its ancestors.
+    owner: *const Command,
+    flags: StringHashMap(Flag).ValueIterator,
+
+    fn next(self: *VisibleFlags) ?*const Flag {
+        while (true) {
+            while (self.flags.next()) |f| {
+                if (f.hidden) continue;
+                if (self.owner == self.command) return f;
+                if (f.persistent and !self.command.hidesInheritedFlag(self.owner, f.name)) return f;
+            }
+            self.owner = self.owner.parent orelse return null;
+            self.flags = self.owner.flags_by_name.valueIterator();
+        }
     }
 };
 
@@ -114,8 +141,8 @@ pub const CommandContext = struct {
     pub fn flag(self: *const CommandContext, flag_name: []const u8, comptime T: type) T {
         const found = self.definedFlag(flag_name);
 
-        // Every flag gets its default in `flag_values` when added, keyed by name.
-        return switch (self.command.flag_values.get(found.name).?) {
+        // Every flag gets its default in its owner's `flag_values` when added, keyed by name.
+        return switch (found.owner.flag_values.get(found.flag.name).?) {
             .Bool => |b| if (T == bool) b else getDefaultValue(T),
             .Int => |i| if (@typeInfo(T) == .int) std.math.lossyCast(T, i) else getDefaultValue(T),
             .String => |s| if (T == []const u8) s else getDefaultValue(T),
@@ -126,7 +153,8 @@ pub const CommandContext = struct {
     /// gives "a", "b"; `--verbose` gives "true" and `--no-verbose` gives "false". Empty if the flag was not
     /// given. Accepts the name or the shortcut; an undefined flag name panics.
     pub fn flagValues(self: *const CommandContext, flag_name: []const u8) []const []const u8 {
-        const given = self.command.flag_args.get(self.definedFlag(flag_name).name) orelse return &.{};
+        const found = self.definedFlag(flag_name);
+        const given = found.owner.flag_args.get(found.flag.name) orelse return &.{};
         return given.items;
     }
 
@@ -136,7 +164,7 @@ pub const CommandContext = struct {
         return self.flagValues(flag_name).len > 0;
     }
 
-    fn definedFlag(self: *const CommandContext, flag_name: []const u8) Flag {
+    fn definedFlag(self: *const CommandContext, flag_name: []const u8) FoundFlag {
         return self.command.findFlag(flag_name) orelse
             std.debug.panic("zli: flag '{s}' is not defined on command '{s}'", .{ flag_name, self.command.cmd_options.name });
     }
@@ -246,7 +274,6 @@ pub const Command = struct {
             .shortcut = "h",
             .type = .Bool,
             .default_value = .{ .Bool = false },
-            .persistent = true, // `app --help sub` shows sub's help
         };
 
         try cmd.addFlag(helpFlag);
@@ -311,9 +338,8 @@ pub const Command = struct {
         var last: ?[]const u8 = null;
         while (true) {
             var next: ?*const Flag = null;
-            var it = self.flags_by_name.valueIterator();
+            var it = self.visibleFlags();
             while (it.next()) |f| {
-                if (f.hidden) continue;
                 if (last != null and !std.mem.lessThan(u8, last.?, f.name)) continue;
                 if (next == null or std.mem.lessThan(u8, f.name, next.?.name)) next = f;
             }
@@ -432,11 +458,8 @@ pub const Command = struct {
         try w.writeByte('\n');
 
         try self.printFlags();
-        var flag_it = self.flags_by_name.valueIterator();
-        const has_flags = while (flag_it.next()) |f| {
-            if (!f.hidden) break true;
-        } else false;
-        if (has_flags) try w.writeByte('\n');
+        var flag_it = self.visibleFlags();
+        if (flag_it.next() != null) try w.writeByte('\n');
 
         try self.printPositionalArgs();
 
@@ -476,12 +499,6 @@ pub const Command = struct {
         try self.commands_by_name.ensureUnusedCapacity(1);
         try self.command_by_aliases.ensureUnusedCapacity(@intCast(aliases.len));
         try self.commands_by_shortcut.ensureUnusedCapacity(1);
-
-        // add persistent flags
-        var flag_it = self.flags_by_name.valueIterator();
-        while (flag_it.next()) |f| {
-            if (f.persistent) try command.addFlag(f.*);
-        }
 
         command.parent = self;
         self.commands_by_name.putAssumeCapacity(name, command);
@@ -523,11 +540,6 @@ pub const Command = struct {
             }
         };
 
-        // add persistent flags
-        if (flag.persistent) {
-            var cmd_it = self.commands_by_name.valueIterator();
-            while (cmd_it.next()) |c| try c.*.addFlag(flag);
-        }
         if (flag.shortcut) |shortcut| if (shortcut.len == 1) try self.flags_by_shortcut.put(shortcut, flag) else @panic("Flag shortcut must be 1 char");
 
         try self.flag_values.put(flag.name, flag.default_value);
@@ -539,23 +551,56 @@ pub const Command = struct {
         }
     }
 
-    fn findFlag(self: *const Command, name_or_shortcut: []const u8) ?Flag {
-        if (self.flags_by_name.get(name_or_shortcut)) |flag| return flag;
-        if (self.flags_by_shortcut.get(name_or_shortcut)) |flag| return flag;
+    /// The flag `name_or_shortcut` means on this command: its own, else a persistent one of the nearest
+    /// ancestor that has it. A flag name defined closer to `self` hides the ancestors' flags of that name.
+    fn findFlag(self: *Command, name_or_shortcut: []const u8) ?FoundFlag {
+        if (self.flags_by_name.get(name_or_shortcut) orelse self.flags_by_shortcut.get(name_or_shortcut)) |flag| {
+            return .{ .owner = self, .flag = flag };
+        }
+        var ancestor = self.parent;
+        while (ancestor) |owner| : (ancestor = owner.parent) {
+            const flag = owner.persistentFlag(name_or_shortcut) orelse continue;
+            if (!self.hidesInheritedFlag(owner, flag.name)) return .{ .owner = owner, .flag = flag };
+        }
         return null;
     }
 
-    fn setFlagValue(self: *Command, flag: Flag, value: []const u8) CommandParseErrors!void {
+    fn persistentFlag(self: *const Command, name_or_shortcut: []const u8) ?Flag {
+        if (self.flags_by_name.get(name_or_shortcut)) |flag| if (flag.persistent) return flag;
+        if (self.flags_by_shortcut.get(name_or_shortcut)) |flag| if (flag.persistent) return flag;
+        return null;
+    }
+
+    /// Whether `self`, or a command between it and `ancestor`, defines a flag called `name`.
+    fn hidesInheritedFlag(self: *const Command, ancestor: *const Command, name: []const u8) bool {
+        var cmd = self;
+        while (cmd != ancestor) : (cmd = cmd.parent.?) {
+            if (cmd.flags_by_name.contains(name)) return true;
+        }
+        return false;
+    }
+
+    /// Records `value` on the flag's owner, so a persistent flag is stored once, where it is declared.
+    /// Errors are reported as `self`'s, the command being parsed.
+    fn setFlagValue(self: *const Command, found: FoundFlag, value: []const u8) CommandParseErrors!void {
+        const flag = found.flag;
         const flag_value = flag.evaluateValue(value) catch {
             try self.errorWriter().print("Invalid value for flag --{s}: '{s}'\nExpected a value of type: {t}\n", .{ flag.name, value, flag.type });
             try self.displayCommandError();
             return CommandErrors.InvalidFlagValue;
         };
-        try self.flag_values.put(flag.name, flag_value);
+        const owner = found.owner;
+        try owner.flag_values.put(flag.name, flag_value);
 
-        const given = try self.flag_args.getOrPut(flag.name);
+        const given = try owner.flag_args.getOrPut(flag.name);
         if (!given.found_existing) given.value_ptr.* = .empty;
-        try given.value_ptr.append(self.init_options.allocator, value);
+        try given.value_ptr.append(owner.init_options.allocator, value);
+    }
+
+    /// The flags help shows for this command, hidden ones left out: its own, then the persistent
+    /// flags of its ancestors that no closer command redefines. In no particular order.
+    fn visibleFlags(self: *const Command) VisibleFlags {
+        return .{ .command = self, .owner = self, .flags = self.flags_by_name.valueIterator() };
     }
 
     /// Puts every flag back to its default, so each parse starts from a clean command.
@@ -567,12 +612,17 @@ pub const Command = struct {
         while (given_it.next()) |given| given.clearRetainingCapacity();
     }
 
-    /// Makes `values` the recorded values of the flag, replacing any recorded before.
-    fn replaceFlagArgs(self: *Command, flag_name: []const u8, values: []const []const u8) Allocator.Error!void {
-        const given = try self.flag_args.getOrPut(flag_name);
-        if (!given.found_existing) given.value_ptr.* = .empty;
-        given.value_ptr.clearRetainingCapacity();
-        try given.value_ptr.appendSlice(self.init_options.allocator, values);
+    /// Whether `--help` was given to this command or to an ancestor it was reached through
+    /// (`app --help sub`). A user may redefine `help` as another type; only a Bool `true` asks for help.
+    fn helpRequested(self: *const Command) bool {
+        var cmd: ?*const Command = self;
+        while (cmd) |c| : (cmd = c.parent) {
+            switch (c.flag_values.get("help") orelse continue) {
+                .Bool => |requested| if (requested) return true,
+                else => {},
+            }
+        }
+        return false;
     }
 
     fn hasVariadicArg(self: *const Command) bool {
@@ -741,10 +791,8 @@ pub const Command = struct {
         while (cmd_it.next()) |cmd| {
             if (!cmd.*.cmd_options.deprecated) widest = @max(widest, commandWidth(cmd.*));
         }
-        var flag_it = self.flags_by_name.valueIterator();
-        while (flag_it.next()) |f| {
-            if (!f.hidden) widest = @max(widest, flagWidth(f.*));
-        }
+        var flag_it = self.visibleFlags();
+        while (flag_it.next()) |f| widest = @max(widest, flagWidth(f.*));
         for (self.positional_args.items) |arg| widest = @max(widest, arg.name.len);
         return widest + self._general_padding;
     }
@@ -831,7 +879,9 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     errdefer current_cmd.flush() catch {};
 
     _ = argsIterator.skip(); // program name
-    self.resetFlags();
+    // Ancestors hold the persistent flags and `help` values `self` reads, so they start from their defaults too.
+    var to_reset: ?*Command = self;
+    while (to_reset) |c| : (to_reset = c.parent) c.resetFlags();
 
     var positionals: ArrayList([]const u8) = .empty;
     defer positionals.deinit(allocator);
@@ -853,15 +903,6 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                 if (current_cmd.findCommand(arg)) |found_cmd| {
                     try found_cmd.checkDeprecated();
                     found_cmd.resetFlags();
-
-                    // Persistent flags given before the subcommand carry down to it.
-                    var flag_it = current_cmd.flags_by_name.valueIterator();
-                    while (flag_it.next()) |f| {
-                        if (!f.persistent) continue;
-                        try found_cmd.flag_values.put(f.name, current_cmd.flag_values.get(f.name).?);
-                        if (current_cmd.flag_args.get(f.name)) |given| try found_cmd.replaceFlagArgs(f.name, given.items);
-                    }
-
                     current_cmd = found_cmd;
                     continue;
                 }
@@ -883,45 +924,46 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
             const eq = std.mem.findScalar(u8, body, '=');
             const name = body[0 .. eq orelse body.len];
 
-            if (current_cmd.findFlag(name)) |flag| {
+            if (current_cmd.findFlag(name)) |found| {
                 if (eq) |i| {
-                    try current_cmd.setFlagValue(flag, body[i + 1 ..]);
-                } else if (flag.type == .Bool) {
-                    try current_cmd.setFlagValue(flag, "true");
+                    try current_cmd.setFlagValue(found, body[i + 1 ..]);
+                } else if (found.flag.type == .Bool) {
+                    try current_cmd.setFlagValue(found, "true");
                 } else {
                     const value = argsIterator.next() orelse {
-                        try error_writer.print("Missing value for flag --{s} of type: {t}\n", .{ flag.name, flag.type });
+                        try error_writer.print("Missing value for flag --{s} of type: {t}\n", .{ found.flag.name, found.flag.type });
                         try current_cmd.displayCommandError();
                         return CommandErrors.MissingFlagValue;
                     };
-                    try current_cmd.setFlagValue(flag, value);
+                    try current_cmd.setFlagValue(found, value);
                 }
                 continue;
             }
 
             // Tried after the full name, so a flag named like "no-cache" still works.
             const negated = if (eq == null and std.mem.startsWith(u8, name, "no-")) current_cmd.findFlag(name["no-".len..]) else null;
-            const flag = negated orelse {
+            const found = negated orelse {
                 try error_writer.print("Unknown flag: --{s}\n", .{body});
                 try current_cmd.displayCommandError();
                 return CommandErrors.UnknownFlag;
             };
-            if (flag.type != .Bool) {
-                try error_writer.print("Flag --{s} does not accept negation as it expects type: {t}\n", .{ flag.name, flag.type });
+            if (found.flag.type != .Bool) {
+                try error_writer.print("Flag --{s} does not accept negation as it expects type: {t}\n", .{ found.flag.name, found.flag.type });
                 return CommandErrors.InvalidFlagNegation;
             }
-            try current_cmd.setFlagValue(flag, "false");
+            try current_cmd.setFlagValue(found, "false");
         } else {
             // -v, or a group like -vt 2 where only the last shortcut may take a value
             const shortcuts = arg[1..];
             for (shortcuts, 0..) |c, i| {
-                const flag = current_cmd.findFlag(shortcuts[i .. i + 1]) orelse {
+                const found = current_cmd.findFlag(shortcuts[i .. i + 1]) orelse {
                     try error_writer.print("Unknown flag shortcut: -{c}\n", .{c});
                     try current_cmd.displayCommandError();
                     return CommandErrors.UnknownFlag;
                 };
+                const flag = found.flag;
                 if (flag.type == .Bool) {
-                    try current_cmd.setFlagValue(flag, "true");
+                    try current_cmd.setFlagValue(found, "true");
                 } else if (i < shortcuts.len - 1) {
                     try error_writer.print("Flag -{c} ({s}) must be last in group since it expects a value of type: {t}\n", .{ c, flag.name, flag.type });
                     return CommandErrors.InvalidFlagShortcut;
@@ -931,7 +973,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
                         try current_cmd.displayCommandError();
                         return CommandErrors.MissingFlagValue;
                     };
-                    try current_cmd.setFlagValue(flag, value);
+                    try current_cmd.setFlagValue(found, value);
                 }
             }
         }
@@ -940,12 +982,7 @@ fn parseArgs(self: *Command, argsIterator: *std.process.Args.Iterator) CommandPa
     const remaining_args = try positionals.toOwnedSlice(allocator);
     errdefer allocator.free(remaining_args);
 
-    // A user may redefine `help` as another type; only a Bool `true` asks for help.
-    const help_requested = switch (current_cmd.flag_values.get("help") orelse FlagValue{ .Bool = false }) {
-        .Bool => |requested| requested,
-        else => false,
-    };
-    if (help_requested) {
+    if (current_cmd.helpRequested()) {
         try current_cmd.printHelp();
         try current_cmd.init_options.writer.flush();
         return .{ .command = current_cmd, .remaining_args = remaining_args, .should_execute = false };
