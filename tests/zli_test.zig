@@ -757,3 +757,21 @@ fn addAliasedCommand(allocator: std.mem.Allocator) !void {
         return err;
     };
 }
+
+fn showOut(ctx: zli.CommandContext) !void {
+    try ctx.writer.print("out={d}\n", .{ctx.flag("out", i32)});
+}
+
+test "redefining a flag drops the shortcut of its old definition" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.root = try zli.Command.init(h.options(), .{ .name = "app", .description = "App" }, showOut);
+    try h.root.addFlag(.{ .name = "out", .shortcut = "o", .description = "Old", .type = .String, .default_value = .{ .String = "" } });
+    try h.root.addFlag(.{ .name = "out", .shortcut = "p", .description = "New", .type = .Int, .default_value = .{ .Int = 0 } });
+
+    try testing.expectError(error.UnknownFlag, h.run(&.{ "app", "-o", "5" }, null));
+    h.out.clearRetainingCapacity();
+    try h.run(&.{ "app", "-p", "5" }, null);
+    try testing.expectEqualStrings("out=5\n", h.output());
+}

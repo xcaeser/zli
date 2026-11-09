@@ -491,7 +491,13 @@ pub const Command = struct {
     }
 
     pub fn addFlag(self: *Command, flag: Flag) Allocator.Error!void {
-        try self.flags_by_name.put(flag.name, flag);
+        const previous = try self.flags_by_name.fetchPut(flag.name, flag);
+        // A redefined flag must not stay reachable through the shortcut of its old definition.
+        if (previous) |old| if (old.value.shortcut) |shortcut| {
+            if (self.flags_by_shortcut.get(shortcut)) |bound| {
+                if (std.mem.eql(u8, bound.name, flag.name)) _ = self.flags_by_shortcut.remove(shortcut);
+            }
+        };
 
         // add persistent flags
         if (flag.persistent) {
