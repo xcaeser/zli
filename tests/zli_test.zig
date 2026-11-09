@@ -847,6 +847,62 @@ fn addAliasedCommand(allocator: std.mem.Allocator) !void {
     };
 }
 
+fn newCommand(h: *Harness, name: []const u8) !*zli.Command {
+    return zli.Command.init(h.options(), .{ .name = name, .description = "Test command" }, showHelp);
+}
+
+test "addCommand refuses a name the parent already has" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.split_errors = true;
+    h.root = try newCommand(&h, "app");
+    try h.root.addCommand(try newCommand(&h, "sub"));
+
+    const duplicate = try newCommand(&h, "sub");
+    defer duplicate.deinit();
+    try testing.expectError(error.DuplicateCommand, h.root.addCommand(duplicate));
+    try testing.expectEqualStrings("Command 'sub' is already defined on 'app'.\n", h.err.written());
+}
+
+test "addCommand refuses a command that already has a parent" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.split_errors = true;
+    h.root = try newCommand(&h, "app");
+    const first = try newCommand(&h, "first");
+    const second = try newCommand(&h, "second");
+    const shared = try newCommand(&h, "shared");
+    try h.root.addCommands(&.{ first, second });
+    try first.addCommand(shared);
+
+    try testing.expectError(error.DuplicateCommand, second.addCommand(shared));
+    try testing.expectEqualStrings("Command 'shared' is already part of a command tree.\n", h.err.written());
+}
+
+test "addCommand refuses a command that would become its own ancestor" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    h.split_errors = true;
+    h.root = try newCommand(&h, "app");
+    const mid = try newCommand(&h, "mid");
+    const leaf = try newCommand(&h, "leaf");
+    try h.root.addCommand(mid);
+    try mid.addCommand(leaf);
+
+    try testing.expectError(error.DuplicateCommand, h.root.addCommand(h.root));
+    try testing.expectError(error.DuplicateCommand, mid.addCommand(h.root));
+    try testing.expectError(error.DuplicateCommand, leaf.addCommand(h.root));
+    try testing.expectEqualStrings(
+        \\Command 'app' is already part of a command tree.
+        \\Command 'app' is already part of a command tree.
+        \\Command 'app' is already part of a command tree.
+        \\
+    , h.err.written());
+}
+
 fn showOut(ctx: zli.CommandContext) !void {
     try ctx.writer.print("out={d}\n", .{ctx.flag("out", i32)});
 }

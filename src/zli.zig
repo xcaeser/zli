@@ -27,6 +27,7 @@ pub const CommandErrors = error{
     UnknownCommand,
     UnknownFlag,
     CommandDeprecated,
+    DuplicateCommand,
 };
 
 /// Errors returned while rendering command output.
@@ -455,8 +456,22 @@ pub const Command = struct {
         return list;
     }
 
+    /// Fails with `DuplicateCommand` when `self` already has a command of that name, or when
+    /// `command` already belongs to a tree or is `self` or one of its ancestors.
     /// On error the command is still the caller's to deinit.
-    pub fn addCommand(self: *Command, command: *Command) Allocator.Error!void {
+    pub fn addCommand(self: *Command, command: *Command) CommandSetupErrors!void {
+        const name = command.cmd_options.name;
+        if (self.commands_by_name.contains(name)) {
+            try self.errorWriter().print("Command '{s}' is already defined on '{s}'.\n", .{ name, self.cmd_options.name });
+            try self.flush();
+            return CommandErrors.DuplicateCommand;
+        }
+        if (command.parent != null or self.isSelfOrDescendantOf(command)) {
+            try self.errorWriter().print("Command '{s}' is already part of a command tree.\n", .{name});
+            try self.flush();
+            return CommandErrors.DuplicateCommand;
+        }
+
         const aliases = command.cmd_options.aliases orelse &.{};
         try self.commands_by_name.ensureUnusedCapacity(1);
         try self.command_by_aliases.ensureUnusedCapacity(@intCast(aliases.len));
@@ -469,12 +484,21 @@ pub const Command = struct {
         }
 
         command.parent = self;
-        self.commands_by_name.putAssumeCapacity(command.cmd_options.name, command);
+        self.commands_by_name.putAssumeCapacity(name, command);
         for (aliases) |alias| self.command_by_aliases.putAssumeCapacity(alias, command);
         if (command.cmd_options.shortcut) |shortcut| self.commands_by_shortcut.putAssumeCapacity(shortcut, command);
     }
 
-    pub fn addCommands(self: *Command, commands: []const *Command) Allocator.Error!void {
+    fn isSelfOrDescendantOf(self: *const Command, ancestor: *const Command) bool {
+        var cmd: ?*const Command = self;
+        while (cmd) |c| : (cmd = c.parent) {
+            if (c == ancestor) return true;
+        }
+        return false;
+    }
+
+    /// On error the failing command and the ones after it are still the caller's to deinit.
+    pub fn addCommands(self: *Command, commands: []const *Command) CommandSetupErrors!void {
         for (commands) |cmd| try self.addCommand(cmd);
     }
 
