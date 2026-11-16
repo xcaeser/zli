@@ -19,6 +19,7 @@ Batteries included. [ZLI reference docs](https://xcaeser.github.io/zli)
 - Variadic args can keep parsing flags after the positionals (`passthrough = false`)
 - Repeated flags (`ctx.flagValues`) and given-vs-default (`ctx.isFlagSet`)
 - Errors on a separate writer (`error_writer`), help stays on `writer`
+- The process environment in every command (`ctx.environ_map`)
 - Auto help/version/deprecation handling
 - Pretty help output with aligned flags & args
 - Your own message at the end of a command's help (`help_footer`)
@@ -61,6 +62,7 @@ pub fn main(init: std.process.Init) !void {
 
     const init_options = zli.InitOptions{
         .allocator = init.gpa,
+        .environ_map = init.environ_map,
         .io = io,
         .writer = stdout,
         .reader = stdin,
@@ -165,6 +167,7 @@ pub fn main(init: std.process.Init) !void {
 
     const root = try cli.build(.{
         .allocator = init.gpa,
+        .environ_map = init.environ_map,
         .io = io,
         .writer = stdout,
         .reader = stdin,

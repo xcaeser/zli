@@ -15,21 +15,24 @@ const Harness = struct {
     err: std.Io.Writer.Allocating,
     split_errors: bool = false,
     in: std.Io.Reader,
+    env: std.process.Environ.Map,
     root: *zli.Command = undefined,
 
     fn init(self: *Harness) void {
-        self.* = .{ .out = .init(testing.allocator), .err = .init(testing.allocator), .in = .fixed("") };
+        self.* = .{ .out = .init(testing.allocator), .err = .init(testing.allocator), .in = .fixed(""), .env = .init(testing.allocator) };
     }
 
     fn deinit(self: *Harness) void {
         self.root.deinit();
         self.out.deinit();
         self.err.deinit();
+        self.env.deinit();
     }
 
     fn options(self: *Harness) zli.InitOptions {
         return .{
             .allocator = testing.allocator,
+            .environ_map = &self.env,
             .io = testing.io,
             .writer = &self.out.writer,
             .reader = &self.in,
@@ -849,6 +852,22 @@ fn addAliasedCommand(allocator: std.mem.Allocator) !void {
 
 fn newCommand(h: *Harness, name: []const u8) !*zli.Command {
     return zli.Command.init(h.options(), .{ .name = name, .description = "Test command" }, showHelp);
+}
+
+test "commands read the environment the app passes in" {
+    var h: Harness = undefined;
+    h.init();
+    defer h.deinit();
+    try h.env.put("ZLI_GREETING", "hi");
+    h.root = try newCommand(&h, "app");
+    try h.root.addCommand(try zli.Command.init(h.options(), .{ .name = "sub", .description = "Sub" }, printGreeting));
+
+    try h.run(&.{ "app", "sub" }, null);
+    try testing.expectEqualStrings("hi\n", h.output());
+}
+
+fn printGreeting(ctx: zli.CommandContext) !void {
+    try ctx.writer.print("{s}\n", .{ctx.environ_map.?.get("ZLI_GREETING") orelse "unset"});
 }
 
 test "addCommand refuses a name the parent already has" {

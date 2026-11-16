@@ -133,6 +133,7 @@ pub const CommandContext = struct {
     io: Io,
     writer: *Io.Writer,
     reader: *Io.Reader,
+    environ_map: ?*const std.process.Environ.Map = null,
     positional_args: []const []const u8,
     spinner: *Spinner,
     data: ?*anyopaque = null,
@@ -220,6 +221,8 @@ pub const InitOptions = struct {
     writer: *Io.Writer,
     reader: *Io.Reader,
     allocator: Allocator,
+    /// The process environment, `init.environ_map` in `main`. Commands read it as `ctx.environ_map`, null if the app passes none.
+    environ_map: ?*const std.process.Environ.Map = null,
     /// Where parse errors, deprecation notices and `run`'s `error: Name` line go. Null means `writer`.
     error_writer: ?*Io.Writer = null,
 };
@@ -727,6 +730,7 @@ pub const Command = struct {
             .io = cmd.init_options.io,
             .writer = cmd.init_options.writer,
             .reader = cmd.init_options.reader,
+            .environ_map = cmd.init_options.environ_map,
             .positional_args = parsedOutput.remaining_args,
             .spinner = &spinner,
             .data = context.data,
